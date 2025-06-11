@@ -2,7 +2,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const GEMINI_MODELS = ['gemini-1.5-pro-latest', 'gemini-1.5-flash-latest', 'gemini-pro'];
   const OPENAI_MODELS = ['o3-pro', 'o3', 'o3-mini', 'gpt-4o', 'gpt-4-turbo', 'gpt-3.5-turbo'];
   const DEFAULT_GEMINI_MODEL = 'gemini-1.5-pro-latest';
-  const DEFAULT_OPENAI_MODEL = 'o3';
+  const DEFAULT_OPENAI_MODEL = 'gpt-4o';
 
   const apiKeyInput = document.getElementById('apiKey');
   const writingStyleSelect = document.getElementById('writingStyle');
