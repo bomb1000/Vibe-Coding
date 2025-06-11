@@ -777,63 +777,76 @@ function createFabButton() {
     fabButton.id = 'q-fab-button';
     fabButton.textContent = 'Q';
 
+    if (window.location.hostname.includes('youtube.com')) {
+        fabButton.classList.add('ew-fab-youtube');
+    }
+
     // console.log("EW_CONTENT_DEBUG: createFabButton: fabButton element created. Attempting to append to document.body.");
     if (!document.body) {
         // console.error("EW_CONTENT_DEBUG: createFabButton: document.body is not available!");
         console.error("EW_CONTENT: createFabButton: document.body is not available! Cannot append FAB.");
         return;
     }
-    document.body.appendChild(fabButton);
-    // console.log("EW_CONTENT_DEBUG: createFabButton: fabButton appended to document.body.");
 
-    // Add event listener here:
-    if (!fabButton.ewFabListenerAttached) {
-        fabButton.addEventListener('click', () => {
-            if (fabWasDragged) {
-                fabWasDragged = false; // Reset for next interaction
-                return;
-            }
-            if (sidebar) {
-                sidebar.classList.toggle('open');
-                if (sidebar.classList.contains('open')) {
-                    fabButton.textContent = '✕';
-                } else {
-                    fabButton.textContent = 'Q';
+    setTimeout(() => {
+        if (!document.body || !fabButton) { // Check if body and fabButton are still valid
+            console.warn("EW_CONTENT: setTimeout in createFabButton: document.body or fabButton no longer available.");
+            return;
+        }
+        document.body.appendChild(fabButton);
+        // console.log("EW_CONTENT_DEBUG: createFabButton: fabButton appended to document.body (after timeout).");
+
+        // Add event listener here:
+        if (!fabButton.ewFabListenerAttached) {
+            fabButton.addEventListener('click', () => {
+                if (fabWasDragged) {
+                    fabWasDragged = false; // Reset for next interaction
+                    return;
                 }
-            }
-        });
-        fabButton.ewFabListenerAttached = true;
-    }
-    fabButton.addEventListener('mousedown', onFabMouseDown);
+                if (sidebar) {
+                    sidebar.classList.toggle('open');
+                    if (sidebar.classList.contains('open')) {
+                        fabButton.textContent = '✕';
+                    } else {
+                        fabButton.textContent = 'Q';
+                    }
+                }
+            });
+            fabButton.ewFabListenerAttached = true;
+        }
+        fabButton.addEventListener('mousedown', onFabMouseDown);
 
-    if (chrome.runtime?.id) {
-      chrome.storage.local.get(EW_FAB_STORAGE_KEY, (result) => {
-        if (chrome.runtime.lastError) {
-          console.error("EW_CONTENT: Error loading FAB position:", chrome.runtime.lastError.message);
+        if (chrome.runtime?.id) {
+          chrome.storage.local.get(EW_FAB_STORAGE_KEY, (result) => {
+            if (chrome.runtime.lastError) {
+              console.error("EW_CONTENT: Error loading FAB position:", chrome.runtime.lastError.message);
+            }
+            if (fabButton) { // Check if fabButton still exists
+              if (result[EW_FAB_STORAGE_KEY]) {
+                fabButton.style.left = result[EW_FAB_STORAGE_KEY].left + 'px';
+                fabButton.style.top = result[EW_FAB_STORAGE_KEY].top + 'px';
+                fabButton.style.right = 'auto';
+                fabButton.style.bottom = 'auto';
+              } else {
+                // Default position if nothing in storage or key is missing
+                fabButton.style.left = 'auto';
+                fabButton.style.top = '20px';
+                fabButton.style.right = '20px';
+                fabButton.style.bottom = 'auto';
+              }
+            }
+          });
+        } else if (fabButton) {
+             // Default position if runtime.id is not available
+             fabButton.style.left = 'auto';
+             fabButton.style.top = '20px';
+             fabButton.style.right = '20px';
+             fabButton.style.bottom = 'auto';
         }
-        if (fabButton) { // Check if fabButton still exists (e.g. not removed by disabling extension)
-          if (result[EW_FAB_STORAGE_KEY]) {
-            fabButton.style.left = result[EW_FAB_STORAGE_KEY].left + 'px';
-            fabButton.style.top = result[EW_FAB_STORAGE_KEY].top + 'px';
-            fabButton.style.right = 'auto';
-            fabButton.style.bottom = 'auto';
-          } else {
-            // Default position if nothing in storage or key is missing
-            fabButton.style.left = 'auto'; // Let CSS default or explicitly set
-            fabButton.style.top = '20px';  // Default if not in storage
-            fabButton.style.right = '20px';
-            fabButton.style.bottom = 'auto';
-          }
-        }
-      });
-    } else if (fabButton) {
-         // Default position if runtime.id is not available (e.g. tests or unusual context)
-         fabButton.style.left = 'auto';
-         fabButton.style.top = '20px';
-         fabButton.style.right = '20px';
-         fabButton.style.bottom = 'auto';
-    }
-    // console.log("EW_CONTENT_DEBUG: createFabButton completed.");
+        // console.log("EW_CONTENT_DEBUG: createFabButton logic inside setTimeout completed.");
+    }, 1000); // 1-second delay
+
+    // console.log("EW_CONTENT_DEBUG: createFabButton completed (setTimeout scheduled).");
 }
 
 // Old initialization block removed as per refactoring.

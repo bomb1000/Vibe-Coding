@@ -332,20 +332,33 @@ body.ew-sidebar-present {
 
 /* FAB Button Styles */
 #q-fab-button {
-    position: fixed;
+    position: fixed !important;
     width: 50px; /* 球的大小 */
     height: 50px;
     background-color: #007bff; /* 範例顏色 */
     color: white;
     border-radius: 50%; /* 圓形 */
-    display: flex;
+    display: flex !important;
     justify-content: center;
     align-items: center;
     font-size: 24px; /* 圖標或文字大小 */
     box-shadow: 0 4px 8px rgba(0,0,0,0.2);
     cursor: pointer;
-    z-index: 10000; /* 確保在最上層 */
+    z-index: 2147483647 !important; /* 確保在最上層 */
+    visibility: visible !important;
     transition: transform 0.2s ease-out, background-color 0.2s ease; /* 按鈕本身的點擊/懸浮效果 */
+}
+
+#q-fab-button.ew-fab-youtube {
+    /* You can start by re-asserting some key properties */
+    display: flex !important;
+    position: fixed !important;
+    visibility: visible !important;
+    z-index: 2147483647 !important; /* Max z-index */
+    /* Add any other properties you suspect might be overridden by YouTube */
+    /* For example, if you suspect opacity or transform issues: */
+    opacity: 1 !important;
+    transform: none !important;
 }
 
 #q-fab-button:hover {
