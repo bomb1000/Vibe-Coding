@@ -12,6 +12,7 @@ let sidebarContent = null;
 let sidebarToggle = null;
 let ewSidebarHeader = null; 
 let fabButton = null; // Added fabButton
+let fabObserver = null; // Observer for FAB
 let isExtensionEnabled = true;
 let ewFontSizeMultiplier = 1.0; 
 const EW_BASE_FONT_SIZE = 14; 
@@ -525,6 +526,11 @@ function ewOnMouseUp() {
 }
 
 function removeUI() {
+  if (fabObserver) {
+      fabObserver.disconnect();
+      fabObserver = null; // Clear the reference
+      console.log("EW_CONTENT: FAB MutationObserver disconnected.");
+  }
   if (sidebar) { 
     sidebar.remove();
     sidebar = null;
@@ -844,9 +850,163 @@ function createFabButton() {
              fabButton.style.bottom = 'auto';
         }
         // console.log("EW_CONTENT_DEBUG: createFabButton logic inside setTimeout completed.");
+
+        // THEN Initialize the observer
+        initializeFabObserver();
+
     }, 1000); // 1-second delay
 
     // console.log("EW_CONTENT_DEBUG: createFabButton completed (setTimeout scheduled).");
+}
+
+function initializeFabObserver() {
+    if (!fabButton || !fabButton.isConnected) {
+        console.warn("EW_CONTENT: FAB not found or not in DOM when trying to initialize MutationObserver.");
+        return;
+    }
+
+    if (fabObserver) {
+        fabObserver.disconnect();
+    }
+
+    fabObserver = new MutationObserver((mutationsList, observer) => {
+        // Critical: Disconnect observer immediately to prevent infinite loops while handling.
+        observer.disconnect();
+
+        let fabNeedsRestore = false;
+        let fabWasRemoved = false;
+
+        for (const mutation of mutationsList) {
+            if (mutation.type === 'attributes' && (mutation.attributeName === 'style' || mutation.attributeName === 'class')) {
+                // Check if fabButton is still part of the document and visible
+                if (fabButton.isConnected) {
+                    const computedStyle = getComputedStyle(fabButton);
+                    if (fabButton.offsetParent === null ||
+                        computedStyle.display === 'none' ||
+                        computedStyle.visibility === 'hidden' ||
+                        parseFloat(computedStyle.opacity) < 0.1) { // Check for near zero opacity
+                        fabNeedsRestore = true;
+                    }
+                } else { // If not connected, it was likely removed by attribute change somehow, mark as removed.
+                    fabWasRemoved = true;
+                    fabNeedsRestore = true;
+                }
+            } else if (mutation.type === 'childList') {
+                for (const removedNode of mutation.removedNodes) {
+                    if (removedNode === fabButton) {
+                        fabWasRemoved = true;
+                        fabNeedsRestore = true; // If removed, it also needs style restoration
+                        break;
+                    }
+                }
+            }
+            if (fabNeedsRestore) break; // No need to check further mutations for this cycle
+        }
+
+        if (fabNeedsRestore) {
+            console.log("EW_CONTENT: MutationObserver detected FAB interference. Attempting restore.");
+            // Ensure fabButton variable is still valid
+            if (!fabButton) {
+                console.error("EW_CONTENT: fabButton is null during restore attempt. Cannot proceed.");
+                // Attempt to re-observe body as a last resort if observer is still valid
+                if (document.body && observer) {
+                    try {
+                        observer.observe(document.body, { childList: true, subtree: false });
+                    } catch (e) {
+                        console.error("EW_CONTENT: Error trying to re-observe body:", e);
+                    }
+                }
+                return;
+            }
+
+            if (fabWasRemoved && document.body && !fabButton.isConnected) {
+                document.body.appendChild(fabButton);
+                console.log("EW_CONTENT: FAB re-appended to body.");
+            }
+
+            // Restore styles - ensure it's visible
+            fabButton.style.setProperty('display', 'flex', 'important');
+            fabButton.style.setProperty('visibility', 'visible', 'important');
+            fabButton.style.setProperty('opacity', '1', 'important');
+            fabButton.style.setProperty('position', 'fixed', 'important');
+            fabButton.style.setProperty('z-index', '2147483647', 'important'); // Max z-index
+
+            // Restore YouTube-specific class if applicable
+            if (window.location.hostname.includes('youtube.com')) {
+                fabButton.classList.add('ew-fab-youtube');
+            }
+
+            // Restore basic position if it seems to have been lost
+            const fabRect = fabButton.getBoundingClientRect();
+            const isOffScreen = fabRect.top < 0 || fabRect.left < 0 ||
+                              fabRect.bottom > window.innerHeight || fabRect.right > window.innerWidth ||
+                              fabRect.width === 0 || fabRect.height === 0;
+
+            if (isOffScreen || fabButton.style.getPropertyValue('position') !== 'fixed') {
+               console.log("EW_CONTENT: FAB appears off-screen or position altered, resetting to default.");
+               fabButton.style.right = '20px';
+               fabButton.style.top = '20px';
+               fabButton.style.left = 'auto'; // Clear potentially conflicting values
+               fabButton.style.bottom = 'auto'; // Clear potentially conflicting values
+            }
+        }
+
+        // Critical: Re-observe *after* handling mutations.
+        if (fabButton && fabButton.isConnected && observer) {
+            try {
+                observer.observe(fabButton, {
+                    attributes: true,
+                    attributeFilter: ['style', 'class'],
+                    subtree: false
+                });
+                if (fabButton.parentNode) {
+                    observer.observe(fabButton.parentNode, {
+                        childList: true,
+                        subtree: false
+                    });
+                } else {
+                    console.warn("EW_CONTENT: FAB is connected but has no parentNode for observation.");
+                }
+            } catch (e) {
+                console.error("EW_CONTENT: Error trying to re-observe FAB/parent:", e);
+            }
+        } else if (document.body && fabButton && !fabButton.isConnected && observer) {
+           console.warn("EW_CONTENT: FAB not connected after restore attempt. Observing body.");
+           try {
+               observer.observe(document.body, { childList: true, subtree: false });
+           } catch (e) {
+               console.error("EW_CONTENT: Error trying to observe body as fallback:", e);
+           }
+        } else if (!fabButton && document.body && observer) {
+             console.warn("EW_CONTENT: fabButton became null. Observing body.");
+              try {
+               observer.observe(document.body, { childList: true, subtree: false });
+           } catch (e) {
+               console.error("EW_CONTENT: Error trying to observe body as fallback (fabButton null):", e);
+           }
+        }
+    });
+
+    if (fabButton && fabButton.isConnected && fabObserver) {
+         try {
+             fabObserver.observe(fabButton, {
+                 attributes: true,
+                 attributeFilter: ['style', 'class'],
+                 subtree: false
+             });
+             if (fabButton.parentNode) {
+                  fabObserver.observe(fabButton.parentNode, {
+                     childList: true,
+                     subtree: false
+                 });
+             } else {
+                  console.warn("EW_CONTENT: FAB connected but no parentNode at initial observe setup.");
+             }
+             console.log("EW_CONTENT: FAB MutationObserver initialized and started.");
+         } catch (e) {
+             console.error("EW_CONTENT: Error starting initial observation:", e);
+         }
+    }
 }
 
 // Old initialization block removed as per refactoring.
