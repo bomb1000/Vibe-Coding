@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "英文寫作助手 (Gemini)",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "使用繁體中文輸入，即時顯示英文寫法，並可選擇正式或口語風格。",
   "permissions": [
     "storage",
