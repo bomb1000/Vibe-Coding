@@ -1,0 +1,11 @@
+{
+  "extName": {
+    "message": "English Writing Helper"
+  },
+  "extShortName": {
+    "message": "英文寫作助手"
+  },
+  "extDescription": {
+    "message": "將文字翻譯並潤飾成英文，可選正式、口語或自訂寫作風格。"
+  }
+}

@@ -1,8 +1,13 @@
 console.log("EW_BACKGROUND_TOPLEVEL: background.js script started parsing.");
+const EW_USAGE_ID_KEY = 'ewAnonymousUsageId';
+const EW_USAGE_STATS_KEY = 'ewUsageStats';
+const EW_USAGE_REPORT_ENDPOINT = '';
+const EW_WHATS_NEW_KEY = 'ewWhatsNewState';
+
 // 監聽來自 content_script 的訊息
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'TRANSLATE_TEXT') {
-    handleTranslationRequest(request.text, request.style)
+    translateAndTrack(request.text, request.style, 'content_script')
       .then(sendResponse)
       .catch(error => {
         console.error('Translation error:', error);
@@ -27,6 +32,40 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       }
     });
     return true; // Important for async response
+  } else if (request.type === 'OPEN_OPTIONS_PAGE') {
+    chrome.runtime.openOptionsPage(() => {
+      if (chrome.runtime.lastError) {
+        sendResponse({ error: chrome.runtime.lastError.message });
+      } else {
+        sendResponse({ ok: true });
+      }
+    });
+    return true;
+  } else if (request.type === 'OPEN_FEEDBACK_PAGE') {
+    chrome.tabs.create({ url: chrome.runtime.getURL('feedback.html') }, tab => {
+      if (chrome.runtime.lastError) {
+        sendResponse({ error: chrome.runtime.lastError.message });
+      } else {
+        sendResponse({ ok: true, tabId: tab?.id });
+      }
+    });
+    return true;
+  } else if (request.type === 'GET_WHATS_NEW_STATE') {
+    getWhatsNewState()
+      .then(sendResponse)
+      .catch(error => {
+        console.error('Whats new state error:', error);
+        sendResponse({ shouldShow: false, error: error.message });
+      });
+    return true;
+  } else if (request.type === 'MARK_WHATS_NEW_SEEN') {
+    markWhatsNewSeen(request.version)
+      .then(sendResponse)
+      .catch(error => {
+        console.error('Whats new mark seen error:', error);
+        sendResponse({ ok: false, error: error.message });
+      });
+    return true;
   }
 });
 
@@ -47,11 +86,13 @@ async function handleTranslationRequest(text, style) {
     return { translatedText: '' };
   }
 
-  const settings = await chrome.storage.sync.get(['apiProvider', 'geminiApiKey', 'openaiApiKey', 'writingStyle', 'geminiUserSelectedModel', 'openaiUserSelectedModel']);
+  const settings = await chrome.storage.sync.get(['apiProvider', 'geminiApiKey', 'openaiApiKey', 'writingStyle', 'geminiUserSelectedModel', 'openaiUserSelectedModel', 'customPromptEnabled', 'customPrompt']);
   const apiProvider = settings.apiProvider || 'gemini';
   const currentStyle = style || settings.writingStyle || 'formal';
+  const customInstruction = settings.customPromptEnabled && settings.customPrompt ? settings.customPrompt.trim() : '';
 
-  const prompt = buildPrompt(text, currentStyle);
+  const prompt = buildPrompt(text, currentStyle, customInstruction);
+  const systemInstruction = buildSystemInstruction(currentStyle, customInstruction);
 
   if (apiProvider === 'openai') {
     // OpenAI API
@@ -67,11 +108,9 @@ async function handleTranslationRequest(text, style) {
           'Authorization': `Bearer ${settings.openaiApiKey}`
         },
         body: JSON.stringify({
-          model: settings.openaiUserSelectedModel || 'gpt-3.5-turbo',
+          model: settings.openaiUserSelectedModel || 'gpt-5.4-mini',
           messages: [
-            { role: 'system', content: currentStyle === 'formal' ?
-              'You are a professional English translator. Translate Traditional Chinese to formal, written English suitable for academic or professional contexts.' :
-              'You are a native English speaker. Translate Traditional Chinese to casual, spoken English as if chatting with a friend.' },
+            { role: 'system', content: systemInstruction },
             { role: 'user', content: text }
           ]
         })
@@ -84,7 +123,7 @@ async function handleTranslationRequest(text, style) {
       }
       const data = await response.json();
       if (data.choices && data.choices.length > 0 && data.choices[0].message && data.choices[0].message.content) {
-        return { translatedText: data.choices[0].message.content.trim() };
+        return { translatedText: cleanTranslationText(data.choices[0].message.content) };
       } else {
         throw new Error('Could not extract translation from OpenAI API response.');
       }
@@ -96,7 +135,7 @@ async function handleTranslationRequest(text, style) {
     if (!settings.geminiApiKey) {
       throw new Error('Gemini API Key not configured. Please set it in the extension options.');
     }
-    const geminiModelToUse = settings.geminiUserSelectedModel || 'gemini-1.5-pro-latest';
+    const geminiModelToUse = settings.geminiUserSelectedModel || 'gemini-2.5-flash';
     const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModelToUse}:generateContent?key=${settings.geminiApiKey}`;
     try {
       const response = await fetch(API_URL, {
@@ -120,7 +159,7 @@ async function handleTranslationRequest(text, style) {
       console.log("EW_BACKGROUND_API_RESPONSE: Raw JSON response from Gemini API:", JSON.parse(JSON.stringify(data)));
       if (data.candidates && data.candidates.length > 0 && data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts.length > 0) {
         const translatedText = data.candidates[0].content.parts[0].text;
-        return { translatedText: translatedText.trim() };
+        return { translatedText: cleanTranslationText(translatedText) };
       } else if (data.promptFeedback && data.promptFeedback.blockReason) {
         throw new Error(`Content blocked by API: ${data.promptFeedback.blockReason}`);
       } else {
@@ -132,14 +171,199 @@ async function handleTranslationRequest(text, style) {
   }
 }
 
-function buildPrompt(chineseText, style) {
+function buildSystemInstruction(style, customInstruction = '') {
+  const outputRule = 'Only output the final English translation itself. Do not add any prefix, title, label, explanation, quotation wrapper, or phrase like "Here is the translation".';
+  if (customInstruction) {
+    return `${customInstruction}\n\n${outputRule}`;
+  }
+  return style === 'formal' ?
+    `You are a professional English translator. Translate the user's text from its original language into formal, written English suitable for academic or professional contexts. ${outputRule}` :
+    `You are a native English speaker. Translate the user's text from its original language into casual, spoken English as if chatting with a friend. ${outputRule}`;
+}
+
+function buildPrompt(sourceText, style, customInstruction = '') {
+  const outputRule = 'Only output the final English translation itself. Do not add any prefix, title, label, explanation, quotation wrapper, or phrase like "Here is the translation".';
+  if (customInstruction) {
+    return `${customInstruction}\n\n${outputRule}\n\nSource text: \"${sourceText}\"\n\nEnglish:`;
+  }
   let styleDescription = "";
   if (style === 'formal') {
-    styleDescription = "Please translate the following Traditional Chinese text into formal, written English suitable for academic or professional contexts. Ensure the translation is accurate, grammatically correct, and maintains a professional tone.";
+    styleDescription = "Please translate the following text from its original language into formal, written English suitable for academic or professional contexts. Ensure the translation is accurate, grammatically correct, and maintains a professional tone.";
   } else {
-    styleDescription = "Please translate the following Traditional Chinese text into casual, spoken English, like how a native speaker would chat with a friend. Use common idioms and contractions if appropriate, but keep it natural.";
+    styleDescription = "Please translate the following text from its original language into casual, spoken English, like how a native speaker would chat with a friend. Use common idioms and contractions if appropriate, but keep it natural.";
   }
-  return `${styleDescription}\n\nTraditional Chinese: \"${chineseText}\"\n\nEnglish Translation:`;
+  return `${styleDescription}\n\n${outputRule}\n\nSource text: \"${sourceText}\"\n\nEnglish:`;
+}
+
+function cleanTranslationText(text) {
+  return String(text || '')
+    .trim()
+    .replace(/^["'“”‘’\s]+|["'“”‘’\s]+$/g, '')
+    .replace(/^(?:here(?:'s| is)\s+(?:the\s+)?(?:formal\s+written\s+|casual\s+|english\s+)?translation(?:\s+in\s+english)?|the\s+(?:formal\s+written\s+|casual\s+|english\s+)?translation\s+is|english(?:\s+translation)?|translation)\s*[:：\-–—]\s*/i, '')
+    .trim();
+}
+
+function storageLocalGet(keys) {
+  return new Promise(resolve => chrome.storage.local.get(keys, result => resolve(result || {})));
+}
+
+function storageLocalSet(values) {
+  return new Promise(resolve => chrome.storage.local.set(values, resolve));
+}
+
+async function getWhatsNewState() {
+  const currentVersion = chrome.runtime.getManifest().version;
+  const stored = await storageLocalGet([EW_WHATS_NEW_KEY]);
+  const state = stored[EW_WHATS_NEW_KEY] || {};
+  return {
+    previousVersion: state.previousVersion || '',
+    currentVersion: state.currentVersion || currentVersion,
+    hasSeenWhatsNew: state.hasSeenWhatsNew !== false,
+    shouldShow: state.currentVersion === currentVersion && state.hasSeenWhatsNew === false,
+    updatedAt: state.updatedAt || ''
+  };
+}
+
+async function markWhatsNewSeen(version) {
+  const currentVersion = chrome.runtime.getManifest().version;
+  const targetVersion = version || currentVersion;
+  const stored = await storageLocalGet([EW_WHATS_NEW_KEY]);
+  const state = stored[EW_WHATS_NEW_KEY] || {};
+  await storageLocalSet({
+    [EW_WHATS_NEW_KEY]: {
+      ...state,
+      currentVersion: targetVersion,
+      hasSeenWhatsNew: true,
+      seenAt: new Date().toISOString()
+    }
+  });
+  return { ok: true };
+}
+
+function storageSyncGet(keys) {
+  return new Promise(resolve => chrome.storage.sync.get(keys, result => resolve(result || {})));
+}
+
+function makeAnonymousUsageId() {
+  const bytes = new Uint8Array(8);
+  crypto.getRandomValues(bytes);
+  return `EWH-${Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('').toUpperCase().match(/.{1,4}/g).join('-')}`;
+}
+
+async function getAnonymousUsageId() {
+  const stored = await storageLocalGet([EW_USAGE_ID_KEY]);
+  if (stored[EW_USAGE_ID_KEY]) return stored[EW_USAGE_ID_KEY];
+  const id = makeAnonymousUsageId();
+  await storageLocalSet({ [EW_USAGE_ID_KEY]: id });
+  return id;
+}
+
+function getDateBucket() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function countCharacters(text) {
+  return Array.from(String(text || '').trim()).length;
+}
+
+async function updateLocalUsageStats(event) {
+  const stored = await storageLocalGet([EW_USAGE_STATS_KEY]);
+  const stats = stored[EW_USAGE_STATS_KEY] || {
+    totalTranslationAttempts: 0,
+    successfulTranslations: 0,
+    failedTranslations: 0,
+    sourceCharCount: 0,
+    outputCharCount: 0,
+    byDate: {}
+  };
+  const date = event.dateBucket;
+  stats.byDate[date] = stats.byDate[date] || {
+    totalTranslationAttempts: 0,
+    successfulTranslations: 0,
+    failedTranslations: 0,
+    sourceCharCount: 0,
+    outputCharCount: 0
+  };
+
+  stats.totalTranslationAttempts += 1;
+  stats.sourceCharCount += event.sourceCharCount;
+  stats.outputCharCount += event.outputCharCount;
+  stats.byDate[date].totalTranslationAttempts += 1;
+  stats.byDate[date].sourceCharCount += event.sourceCharCount;
+  stats.byDate[date].outputCharCount += event.outputCharCount;
+
+  if (event.status === 'success') {
+    stats.successfulTranslations += 1;
+    stats.byDate[date].successfulTranslations += 1;
+  } else {
+    stats.failedTranslations += 1;
+    stats.byDate[date].failedTranslations += 1;
+  }
+
+  await storageLocalSet({ [EW_USAGE_STATS_KEY]: stats });
+}
+
+async function sendRemoteUsageEvent(event) {
+  if (!EW_USAGE_REPORT_ENDPOINT) return;
+  try {
+    await fetch(EW_USAGE_REPORT_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(event),
+      keepalive: true
+    });
+  } catch (error) {
+    console.warn('EW_USAGE: Could not send anonymous usage event:', error.message);
+  }
+}
+
+async function recordUsageEvent({ sourceText, translatedText = '', status, provider, style, source }) {
+  const settings = await storageSyncGet(['anonymousUsageEnabled']);
+  if (settings.anonymousUsageEnabled === false) return;
+
+  const event = {
+    anonymousUserId: await getAnonymousUsageId(),
+    event: 'translation_completed',
+    status,
+    sourceCharCount: countCharacters(sourceText),
+    outputCharCount: countCharacters(translatedText),
+    provider: provider || 'unknown',
+    style: style || 'formal',
+    source: source || 'unknown',
+    extensionVersion: chrome.runtime.getManifest().version,
+    dateBucket: getDateBucket()
+  };
+
+  await updateLocalUsageStats(event);
+  await sendRemoteUsageEvent(event);
+}
+
+async function translateAndTrack(text, style, source) {
+  const settings = await storageSyncGet(['apiProvider', 'writingStyle']);
+  const provider = settings.apiProvider || 'gemini';
+  const currentStyle = style || settings.writingStyle || 'formal';
+  try {
+    const result = await handleTranslationRequest(text, currentStyle);
+    await recordUsageEvent({
+      sourceText: text,
+      translatedText: result.translatedText || '',
+      status: 'success',
+      provider,
+      style: currentStyle,
+      source
+    });
+    return result;
+  } catch (error) {
+    await recordUsageEvent({
+      sourceText: text,
+      translatedText: '',
+      status: 'failed',
+      provider,
+      style: currentStyle,
+      source
+    });
+    throw error;
+  }
 }
 
 // Function to setup context menus
@@ -173,6 +397,26 @@ function setupContextMenus() {
 // Call setup on install or startup
 chrome.runtime.onInstalled.addListener((details) => {
   console.log("EW_BACKGROUND_INSTALL: onInstalled event triggered. Details:", JSON.parse(JSON.stringify(details)));
+  const currentVersion = chrome.runtime.getManifest().version;
+  if (details.reason === 'update') {
+    storageLocalSet({
+      [EW_WHATS_NEW_KEY]: {
+        previousVersion: details.previousVersion || '',
+        currentVersion,
+        hasSeenWhatsNew: false,
+        updatedAt: new Date().toISOString()
+      }
+    });
+  } else if (details.reason === 'install') {
+    storageLocalSet({
+      [EW_WHATS_NEW_KEY]: {
+        previousVersion: '',
+        currentVersion,
+        hasSeenWhatsNew: true,
+        updatedAt: new Date().toISOString()
+      }
+    });
+  }
   setupContextMenus();
 });
 // chrome.runtime.onStartup.addListener(setupContextMenus); // Optional: re-create on browser startup
@@ -229,7 +473,7 @@ async function getSelectedTextAndTranslate(tab, style = null) {
     if (selectedText) {
       console.log("EW_BACKGROUND: Selected text for translation:", selectedText);
       try {
-        const translationResult = await handleTranslationRequest(selectedText, style);
+        const translationResult = await translateAndTrack(selectedText, style, 'selection');
         console.log("EW_BACKGROUND: Translation successful, sending to content script. Result:", JSON.parse(JSON.stringify(translationResult)));
         chrome.tabs.sendMessage(tab.id, { type: "DISPLAY_TRANSLATION", data: translationResult }, { frameId: 0 });
       } catch (error) {

@@ -9,13 +9,18 @@ const EW_FAB_STORAGE_KEY = 'ewFabPosition'; // Unique key
 
 let sidebar = null;
 let sidebarContent = null;
-let sidebarToggle = null;
 let ewSidebarHeader = null; 
 let fabButton = null; // Added fabButton
 let fabObserver = null; // Observer for FAB
 let isExtensionEnabled = true;
 let ewFontSizeMultiplier = 1.0; 
 const EW_BASE_FONT_SIZE = 14; 
+const EW_INPUT_DEBOUNCE_MS = 900;
+const EW_MIN_INPUT_LENGTH = 2;
+const EW_NON_ENGLISH_SIGNAL_RE = /[^\x00-\x7F]/;
+let ewInputListenerAttached = false;
+let ewInputDebounceTimer = null;
+let ewLastSubmittedInputText = '';
 
 let isEwDragging = false;
 let ewDragStartX = 0, ewDragStartY = 0;
@@ -31,6 +36,36 @@ const EW_SIDEBAR_MIN_WIDTH = 200;
 const EW_SIDEBAR_MAX_WIDTH = 800; 
 const EW_SIDEBAR_MIN_HEIGHT = 150; 
 let EW_SIDEBAR_MAX_HEIGHT = 600; 
+let ewUiLanguage = EWI18n.detectLanguage();
+
+function ewT(key) {
+  return EWI18n.translate(key, ewUiLanguage);
+}
+
+function updateExistingUiText() {
+  const header = document.getElementById('ew-sidebar-header');
+  if (header) header.textContent = ewT('sidebarTitle');
+  const optionsButton = document.getElementById('ew-options-button');
+  if (optionsButton) {
+    optionsButton.title = ewT('optionsTitle');
+    optionsButton.setAttribute('aria-label', ewT('optionsAria'));
+  }
+  const feedbackButton = document.getElementById('ew-feedback-button');
+  if (feedbackButton) feedbackButton.textContent = ewT('feedbackButton');
+  const copyButton = document.getElementById('ew-copy-button');
+  if (copyButton && copyButton.dataset.copied !== 'true') copyButton.textContent = ewT('copyTranslation');
+  const whatsNewTitle = document.getElementById('ew-whats-new-title');
+  if (whatsNewTitle) whatsNewTitle.textContent = ewT('whatsNewTitle');
+  const whatsNewBody = document.getElementById('ew-whats-new-body');
+  if (whatsNewBody) whatsNewBody.textContent = ewT('whatsNewBody');
+  const whatsNewButton = document.getElementById('ew-whats-new-dismiss');
+  if (whatsNewButton) whatsNewButton.textContent = ewT('whatsNewDismiss');
+}
+
+EWI18n.getStoredLanguage().then(language => {
+  ewUiLanguage = language;
+  updateExistingUiText();
+});
 
 // Refactored Initialization Logic
 let domReady = (document.readyState === "complete" || document.readyState === "interactive");
@@ -102,14 +137,13 @@ try {
     } else if (request.type === 'TRANSLATION_STARTED') {
       console.log("EW: content.js received TRANSLATION_STARTED message.");
       if (window.self === window.top) { // Explicit check for top frame
-        // MODIFIED CONDITION:
-        if (!sidebar || !sidebarContent) { // sidebarToggle check removed
+        if (!sidebar || !sidebarContent) {
             console.log("EW: Sidebar panel not fully initialized (top frame), creating it now for TRANSLATION_STARTED.");
             createSidebar();
         }
         
         if (sidebarContent) {
-            sidebarContent.innerHTML = '<span class="ew-loading-spinner"></span> 翻譯進行中...';
+            sidebarContent.innerHTML = `<span class="ew-loading-spinner"></span> ${ewT('translating')}`;
         }
 
         const copyButton = document.getElementById('ew-copy-button');
@@ -132,8 +166,7 @@ try {
     } else if (request.type === 'DISPLAY_TRANSLATION') {
       console.log("EW: content.js received DISPLAY_TRANSLATION message.");
       if (window.self === window.top) { // Explicit check for top frame
-        // MODIFIED CONDITION:
-        if (!sidebar || !sidebarContent) { // sidebarToggle check removed
+        if (!sidebar || !sidebarContent) {
           console.log("EW: Sidebar panel not fully initialized (top frame), creating it now for DISPLAY_TRANSLATION.");
           createSidebar();
         }
@@ -148,11 +181,11 @@ try {
             if(sidebarContent) sidebarContent.textContent = request.data.error;
             if (copyButton) copyButton.style.display = 'none';
           } else {
-            if(sidebarContent) sidebarContent.textContent = '無翻譯結果或未知錯誤。';
+            if(sidebarContent) sidebarContent.textContent = ewT('noTranslationResult');
             if (copyButton) copyButton.style.display = 'none';
           }
         } else {
-          if(sidebarContent) sidebarContent.textContent = '收到無效的翻譯資料。'; 
+          if(sidebarContent) sidebarContent.textContent = ewT('invalidTranslationData'); 
           if (copyButton) copyButton.style.display = 'none';
         }
 
@@ -257,6 +290,8 @@ function initializeUI() {
       // console.log("EW_CONTENT_DEBUG: initializeUI: #q-fab-button already exists.");
     }
 
+    attachInputTranslationListeners();
+
     if (document.getElementById('ew-sidebar') && !document.getElementById('ew-font-controls') && sidebar) {
         // console.log("EW_CONTENT_DEBUG: initializeUI: Re-adding font controls.");
         const fontControlsContainer = document.createElement('div');
@@ -312,19 +347,19 @@ function initializeUI() {
           // console.error("EW_CONTENT_DEBUG: initializeUI: Error getting shortcut info:", chrome.runtime.lastError.message);
           // Keep original errors if any
           console.error("EW: Error getting shortcut info:", chrome.runtime.lastError.message);
-          shortcutDiv.textContent = 'Shortcut: Error';
+          shortcutDiv.textContent = ewT('shortcutError');
           return;
         }
         if (response && response.shortcut) {
-          shortcutDiv.textContent = `Shortcut: ${response.shortcut}`;
+          shortcutDiv.textContent = `${ewT('shortcutPrefix')}: ${response.shortcut}`;
         } else {
-          shortcutDiv.textContent = 'Shortcut: N/A';
+          shortcutDiv.textContent = ewT('shortcutNA');
         }
       });
     } else {
       const shortcutDiv = document.getElementById('ew-shortcut-display');
       if (sidebar && shortcutDiv) {
-          shortcutDiv.textContent = 'Shortcut: N/A';
+          shortcutDiv.textContent = ewT('shortcutNA');
       }
     }
     // console.log("EW_CONTENT_DEBUG: initializeUI completed.");
@@ -369,12 +404,17 @@ function applyInitialSidebarStateAndSettings() {
     return;
   }
 
-  // applyDefaultDimensions(); // Removed: Initial dimensions/visibility are now CSS controlled.
-                               // Stored dimensions for drag/resize can be re-evaluated later if that feature is kept.
-
   if (chrome.runtime?.id) {
-    // All logic related to 'sidebarCollapsed' (reading, applying class, saving) is removed.
-    // The primary function here is now to load and apply internal settings like font size.
+    chrome.storage.local.get(['ewSidebarWidth', 'ewSidebarHeight', 'ewSidebarTop', 'ewSidebarLeft'], (result) => {
+      if (chrome.runtime.lastError || !sidebar) return;
+      if (result.ewSidebarWidth) sidebar.style.width = result.ewSidebarWidth;
+      if (result.ewSidebarHeight) sidebar.style.height = result.ewSidebarHeight;
+      if (result.ewSidebarTop) sidebar.style.top = result.ewSidebarTop;
+      if (result.ewSidebarLeft) {
+        sidebar.style.left = result.ewSidebarLeft;
+        sidebar.style.right = 'auto';
+      }
+    });
     if (typeof loadAndApplyFontSize === "function") {
       loadAndApplyFontSize();
     }
@@ -417,17 +457,13 @@ function ewOnResizeMouseDown(event) {
   ewInitialSidebarHeight = sidebar.offsetHeight;
   
   const computedStyle = window.getComputedStyle(sidebar);
+  const sidebarRect = sidebar.getBoundingClientRect();
+  ewInitialSidebarLeft = sidebarRect.left;
+  ewSidebarInitialY = sidebarRect.top;
 
-  if (ewResizeType === 'left') {
-    ewInitialSidebarLeft = parseFloat(computedStyle.left) || 0;
-  } else if (ewResizeType === 'top') {
-    // For 'top' resize, we need initial height and initial Y (top) position.
-    // ewInitialSidebarHeight is already captured.
-    // ewSidebarInitialY is used for the top position of the sidebar (similar to how ewSidebarInitialX is used for left in drag)
-    ewSidebarInitialY = sidebar.getBoundingClientRect().top; 
+  if (computedStyle.left === 'auto') {
+    ewInitialSidebarLeft = sidebarRect.left;
   }
-  // For 'right' resize, ewInitialSidebarWidth is already captured.
-  // For 'bottom' resize, ewInitialSidebarHeight is already captured.
 
   // Update max height dynamically based on current viewport
   EW_SIDEBAR_MAX_HEIGHT = Math.floor(window.innerHeight * 0.9);
@@ -443,7 +479,8 @@ function ewOnResizeMouseMove(event) {
   event.preventDefault();
   const dx = event.clientX - ewResizeStartX;
   const dy = event.clientY - ewResizeStartY;
-  if (ewResizeType === 'left') {
+
+  if (ewResizeType.includes('left')) {
     let newWidth = ewInitialSidebarWidth - dx;
     newWidth = Math.max(EW_SIDEBAR_MIN_WIDTH, Math.min(newWidth, EW_SIDEBAR_MAX_WIDTH));
     const widthChange = ewInitialSidebarWidth - newWidth;
@@ -456,10 +493,28 @@ function ewOnResizeMouseMove(event) {
     sidebar.style.width = newWidth + 'px';
     sidebar.style.left = newLeft + 'px';
     sidebar.style.right = 'auto'; 
-  } else if (ewResizeType === 'bottom') {
+  } else if (ewResizeType.includes('right')) {
+    let newWidth = ewInitialSidebarWidth + dx;
+    const maxWidth = Math.min(EW_SIDEBAR_MAX_WIDTH, window.innerWidth - ewInitialSidebarLeft);
+    newWidth = Math.max(EW_SIDEBAR_MIN_WIDTH, Math.min(newWidth, maxWidth));
+    sidebar.style.width = newWidth + 'px';
+    sidebar.style.left = ewInitialSidebarLeft + 'px';
+    sidebar.style.right = 'auto';
+  }
+
+  if (ewResizeType.includes('bottom')) {
     let newHeight = ewInitialSidebarHeight + dy;
     newHeight = Math.max(EW_SIDEBAR_MIN_HEIGHT, Math.min(newHeight, EW_SIDEBAR_MAX_HEIGHT));
     sidebar.style.height = newHeight + 'px';
+  } else if (ewResizeType.includes('top')) {
+    let newHeight = ewInitialSidebarHeight - dy;
+    newHeight = Math.max(EW_SIDEBAR_MIN_HEIGHT, Math.min(newHeight, EW_SIDEBAR_MAX_HEIGHT));
+    const heightChange = ewInitialSidebarHeight - newHeight;
+    let newTop = ewSidebarInitialY + heightChange;
+    newTop = Math.max(0, Math.min(newTop, window.innerHeight - newHeight));
+    sidebar.style.height = newHeight + 'px';
+    sidebar.style.top = newTop + 'px';
+    sidebar.style.bottom = 'auto';
   }
 }
 
@@ -471,14 +526,23 @@ function ewOnResizeMouseUp() {
   let dimensionsToSave = {
     ewSidebarWidth: sidebar.style.width,
     ewSidebarHeight: sidebar.style.height,
-    ...(ewResizeType === 'left' && sidebar.style.left !== 'auto' && { ewSidebarLeft: sidebar.style.left })
+    ...(sidebar.style.left !== 'auto' && { ewSidebarLeft: sidebar.style.left }),
+    ...(sidebar.style.top !== 'auto' && { ewSidebarTop: sidebar.style.top })
   };
   if (chrome.runtime?.id) chrome.storage.local.set(dimensionsToSave);
   ewResizeType = ''; 
 }
 
+function shouldStartSidebarDrag(event) {
+  if (!sidebar || event.button !== 0) return false;
+  if (event.target.closest('button, a, input, textarea, select, label')) return false;
+  if (event.target.closest('#ew-sidebar-content')) return false;
+  if (event.target.closest('[id^="ew-resize-handle"]')) return false;
+  return sidebar.contains(event.target);
+}
+
 function ewOnMouseDown(event) {
-  if (event.button !== 0 || !sidebar) return; 
+  if (!shouldStartSidebarDrag(event)) return; 
   isEwDragging = true;
   ewDragStartX = event.clientX;
   ewDragStartY = event.clientY;
@@ -535,7 +599,6 @@ function removeUI() {
     sidebar.remove();
     sidebar = null;
     sidebarContent = null;
-    sidebarToggle = null;
     ewSidebarHeader = null; 
   }
   if (fabButton) { // Remove FAB button
@@ -553,12 +616,161 @@ function triggerTranslation(text) {
     chrome.storage.sync.get(['writingStyle'], (settings) => {
       if (chrome.runtime.lastError) return;
       if (chrome.runtime?.id) {
+        showTranslationStarted();
         chrome.runtime.sendMessage({ type: 'TRANSLATE_TEXT', text: text, style: settings.writingStyle }, (response) => {
-          if (chrome.runtime.lastError) console.error("Error sending message:", chrome.runtime.lastError.message);
+          if (chrome.runtime.lastError) {
+            console.error("Error sending message:", chrome.runtime.lastError.message);
+            showTranslationResult({ error: chrome.runtime.lastError.message });
+            return;
+          }
+          showTranslationResult(response);
         });
       }
     });
   }
+}
+
+function attachInputTranslationListeners() {
+  if (ewInputListenerAttached) return;
+  document.addEventListener('input', ewHandleEditableInput, true);
+  ewInputListenerAttached = true;
+}
+
+function ewHandleEditableInput(event) {
+  if (!isExtensionEnabled) return;
+  const target = event.target;
+  if (!isTranslatableEditable(target)) return;
+
+  const text = getEditableText(target).trim();
+  if (!shouldTranslateInputText(text)) return;
+
+  window.clearTimeout(ewInputDebounceTimer);
+  ewInputDebounceTimer = window.setTimeout(() => {
+    if (text === ewLastSubmittedInputText) return;
+    ewLastSubmittedInputText = text;
+    triggerTranslation(text);
+  }, EW_INPUT_DEBOUNCE_MS);
+}
+
+function isTranslatableEditable(element) {
+  if (!element || element.disabled || element.readOnly) return false;
+  if (element instanceof HTMLTextAreaElement) return true;
+  if (element instanceof HTMLInputElement) {
+    const type = (element.type || 'text').toLowerCase();
+    return ['text', 'search', 'email', 'url', 'tel'].includes(type);
+  }
+  return element.isContentEditable === true;
+}
+
+function getEditableText(element) {
+  if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+    return element.value || '';
+  }
+  return element.innerText || element.textContent || '';
+}
+
+function shouldTranslateInputText(text) {
+  return text.length >= EW_MIN_INPUT_LENGTH && EW_NON_ENGLISH_SIGNAL_RE.test(text);
+}
+
+function ensureSidebarReadyForTranslation() {
+  if (window.self !== window.top) return false;
+  if (!sidebar || !sidebarContent) {
+    createSidebar();
+  }
+  if (sidebar && fabButton && !sidebar.classList.contains('open')) {
+    sidebar.classList.add('open');
+    fabButton.textContent = '✕';
+  }
+  return !!(sidebar && sidebarContent);
+}
+
+function showTranslationStarted() {
+  if (!ensureSidebarReadyForTranslation()) return;
+  sidebarContent.innerHTML = `<span class="ew-loading-spinner"></span> ${ewT('translating')}`;
+  const copyButton = document.getElementById('ew-copy-button');
+  if (copyButton) copyButton.style.display = 'none';
+}
+
+function showTranslationResult(data) {
+  if (!ensureSidebarReadyForTranslation()) return;
+  const copyButton = document.getElementById('ew-copy-button');
+  if (data?.translatedText && data.translatedText.trim() !== "") {
+    sidebarContent.textContent = data.translatedText;
+    if (copyButton) copyButton.style.display = 'block';
+  } else if (data?.error) {
+    sidebarContent.textContent = data.error;
+    if (copyButton) copyButton.style.display = 'none';
+  } else {
+    sidebarContent.textContent = ewT('noTranslationResult');
+    if (copyButton) copyButton.style.display = 'none';
+  }
+}
+
+function openExtensionOptions() {
+  if (!chrome.runtime?.id) return;
+  chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS_PAGE' }, (response) => {
+    if (chrome.runtime.lastError) {
+      console.error("EW: Could not open options page:", chrome.runtime.lastError.message);
+    } else if (response?.error) {
+      console.error("EW: Could not open options page:", response.error);
+    }
+  });
+}
+
+function openFeedbackPage() {
+  if (!chrome.runtime?.id) return;
+  chrome.runtime.sendMessage({ type: 'OPEN_FEEDBACK_PAGE' }, (response) => {
+    if (chrome.runtime.lastError) {
+      console.error("EW: Could not open feedback page:", chrome.runtime.lastError.message);
+    } else if (response?.error) {
+      console.error("EW: Could not open feedback page:", response.error);
+    }
+  });
+}
+
+function maybeShowWhatsNewNotice() {
+  if (!chrome.runtime?.id || window.self !== window.top) return;
+  chrome.runtime.sendMessage({ type: 'GET_WHATS_NEW_STATE' }, (response) => {
+    if (chrome.runtime.lastError || !response?.shouldShow || !sidebar) return;
+    if (document.getElementById('ew-whats-new-notice')) return;
+
+    const notice = document.createElement('div');
+    notice.id = 'ew-whats-new-notice';
+
+    const title = document.createElement('strong');
+    title.id = 'ew-whats-new-title';
+    title.textContent = ewT('whatsNewTitle');
+
+    const version = document.createElement('p');
+    version.id = 'ew-whats-new-version';
+    version.textContent = `${ewT('whatsNewVersion')} ${response.currentVersion}`;
+
+    const body = document.createElement('p');
+    body.id = 'ew-whats-new-body';
+    body.textContent = ewT('whatsNewBody');
+
+    const dismissButton = document.createElement('button');
+    dismissButton.id = 'ew-whats-new-dismiss';
+    dismissButton.type = 'button';
+    dismissButton.textContent = ewT('whatsNewDismiss');
+    dismissButton.addEventListener('mousedown', event => event.stopPropagation());
+    dismissButton.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      chrome.runtime.sendMessage({ type: 'MARK_WHATS_NEW_SEEN', version: response.currentVersion }, () => {
+        notice.remove();
+      });
+    });
+
+    notice.appendChild(title);
+    notice.appendChild(version);
+    notice.appendChild(body);
+    notice.appendChild(dismissButton);
+
+    const fixedControls = document.getElementById('ew-sidebar-fixed-controls');
+    if (fixedControls) fixedControls.appendChild(notice);
+  });
 }
 
 function createSidebar() {
@@ -573,8 +785,9 @@ function createSidebar() {
       return;
     }
 
-    sidebar = document.createElement('div');
-    sidebar.id = 'ew-sidebar';
+  sidebar = document.createElement('div');
+  sidebar.id = 'ew-sidebar';
+  sidebar.addEventListener('mousedown', ewOnMouseDown);
 
     // Create the new fixed controls wrapper
   const fixedControls = document.createElement('div');
@@ -585,12 +798,29 @@ function createSidebar() {
   sidebarContent.id = 'ew-sidebar-content';
   sidebarContent.textContent = '...'; 
 
-  ewSidebarHeader = document.createElement('h4'); 
+  const sidebarHeaderRow = document.createElement('div');
+  sidebarHeaderRow.id = 'ew-sidebar-header-row';
+
+  ewSidebarHeader = document.createElement('h4');
   ewSidebarHeader.id = 'ew-sidebar-header'; 
-  ewSidebarHeader.textContent = "英文寫法";
-  // Inline styles for margin and padding removed, will be handled by CSS
-  ewSidebarHeader.addEventListener('mousedown', ewOnMouseDown);
-  fixedControls.appendChild(ewSidebarHeader); // Append to fixedControls
+  ewSidebarHeader.textContent = ewT('sidebarTitle');
+
+  const optionsButton = document.createElement('button');
+  optionsButton.id = 'ew-options-button';
+  optionsButton.type = 'button';
+  optionsButton.textContent = '⚙︎';
+  optionsButton.title = ewT('optionsTitle');
+  optionsButton.setAttribute('aria-label', ewT('optionsAria'));
+  optionsButton.addEventListener('mousedown', event => event.stopPropagation());
+  optionsButton.addEventListener('click', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    openExtensionOptions();
+  });
+
+  sidebarHeaderRow.appendChild(ewSidebarHeader);
+  sidebarHeaderRow.appendChild(optionsButton);
+  fixedControls.appendChild(sidebarHeaderRow);
 
   const fontControlsContainer = document.createElement('div');
   fontControlsContainer.id = 'ew-font-controls';
@@ -606,32 +836,43 @@ function createSidebar() {
 
   const shortcutDisplay = document.createElement('div');
   shortcutDisplay.id = 'ew-shortcut-display';
-  shortcutDisplay.textContent = 'Shortcut: ...'; 
+  shortcutDisplay.textContent = `${ewT('shortcutPrefix')}: ...`; 
   // fixedControls.appendChild(shortcutDisplay); // No longer direct child of fixedControls
 
   const fontShortcutWrapper = document.createElement('div');
   fontShortcutWrapper.id = 'ew-font-shortcut-wrapper';
   fontShortcutWrapper.appendChild(fontControlsContainer);
+  const feedbackButton = document.createElement('button');
+  feedbackButton.id = 'ew-feedback-button';
+  feedbackButton.type = 'button';
+  feedbackButton.textContent = ewT('feedbackButton');
+  feedbackButton.addEventListener('click', event => {
+    event.preventDefault();
+    openFeedbackPage();
+  });
+  fontShortcutWrapper.appendChild(feedbackButton);
   fontShortcutWrapper.appendChild(shortcutDisplay);
   fixedControls.appendChild(fontShortcutWrapper);
 
   const copyButton = document.createElement('button');
   copyButton.id = 'ew-copy-button';
-  copyButton.textContent = '複製翻譯';
+  copyButton.textContent = ewT('copyTranslation');
   copyButton.style.display = 'none'; 
   copyButton.addEventListener('click', () => {
-    if (sidebarContent && sidebarContent.textContent && !sidebarContent.textContent.startsWith('翻譯中...') && !sidebarContent.textContent.startsWith('錯誤:') && sidebarContent.textContent !== '...' && sidebarContent.textContent !== '無翻譯結果' && !sidebarContent.textContent.startsWith('輸入中:')) {
+    if (sidebarContent && sidebarContent.textContent && !sidebarContent.textContent.includes(ewT('translating')) && !sidebarContent.textContent.startsWith('錯誤:') && !sidebarContent.textContent.startsWith('Error:') && sidebarContent.textContent !== '...' && sidebarContent.textContent !== ewT('noTranslationResult')) {
       navigator.clipboard.writeText(sidebarContent.textContent).then(() => {
         const originalText = copyButton.textContent;
-        copyButton.textContent = '已複製!';
-        setTimeout(() => { copyButton.textContent = originalText; }, 1500);
+        copyButton.dataset.copied = 'true';
+        copyButton.textContent = ewT('copied');
+        setTimeout(() => {
+          copyButton.dataset.copied = 'false';
+          copyButton.textContent = originalText;
+        }, 1500);
       }).catch(err => console.error('EW: Could not copy text: ', err));
     }
   });
   fixedControls.appendChild(copyButton); // Append to fixedControls
 
-  // Append elements to sidebar in the correct order
-  // sidebar.appendChild(sidebarToggle); // sidebarToggle is removed
   sidebar.appendChild(fixedControls);    // Append the new wrapper
   sidebar.appendChild(sidebarContent);   // Append content after fixed controls
 
@@ -654,11 +895,35 @@ function createSidebar() {
   resizeHandleRight.id = 'ew-resize-handle-right';
   resizeHandleRight.dataset.resizeType = 'right';
   resizeHandleRight.addEventListener('mousedown', ewOnResizeMouseDown);
+
+  const resizeHandleTopLeft = document.createElement('div');
+  resizeHandleTopLeft.id = 'ew-resize-handle-top-left';
+  resizeHandleTopLeft.dataset.resizeType = 'top-left';
+  resizeHandleTopLeft.addEventListener('mousedown', ewOnResizeMouseDown);
+
+  const resizeHandleTopRight = document.createElement('div');
+  resizeHandleTopRight.id = 'ew-resize-handle-top-right';
+  resizeHandleTopRight.dataset.resizeType = 'top-right';
+  resizeHandleTopRight.addEventListener('mousedown', ewOnResizeMouseDown);
+
+  const resizeHandleBottomLeft = document.createElement('div');
+  resizeHandleBottomLeft.id = 'ew-resize-handle-bottom-left';
+  resizeHandleBottomLeft.dataset.resizeType = 'bottom-left';
+  resizeHandleBottomLeft.addEventListener('mousedown', ewOnResizeMouseDown);
+
+  const resizeHandleBottomRight = document.createElement('div');
+  resizeHandleBottomRight.id = 'ew-resize-handle-bottom-right';
+  resizeHandleBottomRight.dataset.resizeType = 'bottom-right';
+  resizeHandleBottomRight.addEventListener('mousedown', ewOnResizeMouseDown);
   
   sidebar.appendChild(resizeHandleLeft);
   sidebar.appendChild(resizeHandleBottom);
   sidebar.appendChild(resizeHandleTop);
   sidebar.appendChild(resizeHandleRight);
+  sidebar.appendChild(resizeHandleTopLeft);
+  sidebar.appendChild(resizeHandleTopRight);
+  sidebar.appendChild(resizeHandleBottomLeft);
+  sidebar.appendChild(resizeHandleBottomRight);
   // console.log("EW_CONTENT_DEBUG: createSidebar: Main sidebar element and children created. Attempting to append to document.body.");
   if (!document.body) {
       // console.error("EW_CONTENT_DEBUG: createSidebar: document.body is not available!");
@@ -668,107 +933,9 @@ function createSidebar() {
       return;
   }
   document.body.appendChild(sidebar);
+  maybeShowWhatsNewNotice();
   // console.log("EW_CONTENT_DEBUG: createSidebar: Main sidebar element appended to document.body.");
   // console.log("EW_CONTENT_DEBUG: createSidebar completed.");
-}
-
-function ewHandleSidebarExpand() {
-  // if (!sidebar || !sidebarToggle) return; // sidebarToggle removed + function body commented out
-  // Ensure it's positioned correctly for expansion at the default edge
-  // sidebar.style.left = 'auto';
-  // sidebar.style.right = '0px';
-  // sidebar.style.top = '20%';
-  
-  // Remove the collapsed class to trigger the transform animation
-  // Make sure transform is cleared if it was set to translateX directly for some reason
-  // sidebar.style.transform = ''; // Clear any direct transform
-  // // sidebar.classList.remove('ew-sidebar-collapsed'); // Visibility managed by FAB
-  // // sidebarToggle.textContent = '<'; // sidebarToggle removed
-
-  // // if (chrome.runtime?.id) { // Logic for saving state temporarily disabled
-  // //   chrome.storage.local.set({ sidebarCollapsed: false });
-  // // }
-}
-
-function ewHandleSidebarCollapse() {
-  // // if (!sidebar || !sidebarToggle) return; // sidebarToggle removed + function body commented out
-  // if (!sidebar) return;
-
-  // const sidebarRect = sidebar.getBoundingClientRect();
-  // const windowWidth = window.innerWidth;
-  // const windowHeight = window.innerHeight; // Get window height for percentage calculation
-  
-  // const sidebarCurrentWidth = sidebarRect.width; // Get current width for targetLeft calculation
-
-  // // Default docked position (target)
-  // const targetTopPercent = 20;
-  // const targetTopPx = windowHeight * (targetTopPercent / 100);
-  // // Target right is 0px, so target left depends on sidebar width
-  // const targetLeftPx = windowWidth - sidebarCurrentWidth;
-
-  // // Current position
-  // const currentTopPx = sidebarRect.top;
-  // const currentLeftPx = sidebarRect.left;
-
-  // // Threshold to decide if animation is needed
-  // const positionThreshold = 5; // 5px threshold
-
-  // const isAtTargetTop = Math.abs(currentTopPx - targetTopPx) < positionThreshold;
-  // // For 'left', compare with targetLeftPx (calculated from right:0)
-  // const isAtTargetLeft = Math.abs(currentLeftPx - targetLeftPx) < positionThreshold;
-
-  // // If the sidebar is significantly away from its target docked position
-  // if (!isAtTargetTop || !isAtTargetLeft) {
-  //   // Ensure sidebar is positioned with left/top for JS animation
-  //   sidebar.style.right = 'auto'; // Important: allow left to be controlled
-  //   sidebar.style.left = currentLeftPx + 'px';
-  //   sidebar.style.top = currentTopPx + 'px';
-
-  //   const animationDuration = 200; // ms for the slide to edge animation
-  //   let startTime = null;
-
-  //   function animateReturnToEdge(timestamp) {
-  //     if (!startTime) startTime = timestamp;
-  //     const progress = timestamp - startTime;
-  //     const fraction = Math.min(progress / animationDuration, 1);
-
-  //     // Linear interpolation (ease-out could be added with a simple easing function)
-  //     const newLeft = currentLeftPx + (targetLeftPx - currentLeftPx) * fraction;
-  //     const newTop = currentTopPx + (targetTopPx - currentTopPx) * fraction;
-
-  //     sidebar.style.left = newLeft + 'px';
-  //     sidebar.style.top = newTop + 'px';
-
-  //     if (fraction < 1) {
-  //       requestAnimationFrame(animateReturnToEdge);
-  //     } else {
-  //       // Animation complete: Snap to final target position and then collapse
-  //       sidebar.style.left = 'auto';
-  //       sidebar.style.right = '0px';
-  //       sidebar.style.top = targetTopPercent + '%'; // Use percentage for final state
-
-  //       // sidebar.classList.add('ew-sidebar-collapsed'); // Visibility managed by FAB
-  //       // sidebarToggle.textContent = '>'; // sidebarToggle removed
-  //       // if (chrome.runtime?.id) { // Logic for saving state temporarily disabled
-  //       //   chrome.storage.local.set({ sidebarCollapsed: true });
-  //       // }
-  //     }
-  //   }
-  //   requestAnimationFrame(animateReturnToEdge);
-
-  // } else {
-  //   // If already at (or very near) the target docked position, just collapse directly.
-  //   // Ensure it's perfectly at the default position before transform.
-  //   sidebar.style.left = 'auto';
-  //   sidebar.style.right = '0px';
-  //   sidebar.style.top = targetTopPercent + '%'; // Use percentage
-
-  //   // sidebar.classList.add('ew-sidebar-collapsed'); // Visibility managed by FAB
-  //   // sidebarToggle.textContent = '>'; // sidebarToggle removed
-  //   // if (chrome.runtime?.id) { // Logic for saving state temporarily disabled
-  //   //   chrome.storage.local.set({ sidebarCollapsed: true });
-  //   // }
-  // }
 }
 
 // Function to create the FAB

@@ -1,10 +1,10 @@
-## Permission Justifications for English Writer with Gemini
+## Permission Justifications for English Writing Helper
 
-Here are the justifications for the permissions requested by the "English Writer with Gemini" Chrome extension:
+Here are the justifications for the permissions requested by the "English Writing Helper" Chrome extension:
 
 1.  **Permission: `storage`**
 
-    *   **Justification:** "To securely save your personal Google Gemini API key and your preferred English writing style (e.g., Formal or Conversational). This allows the extension to remember your settings across different browsing sessions, so you don't have to re-enter them each time you use the extension, ensuring a seamless and personalized experience."
+    *   **Justification:** "To securely save your personal Google Gemini or OpenAI API key and your preferred English writing style (e.g., Formal or Conversational). This allows the extension to remember your settings across different browsing sessions, so you don't have to re-enter them each time you use the extension, ensuring a seamless and personalized experience."
 
 2.  **Permission: `activeTab`**
 
@@ -20,8 +20,12 @@ Here are the justifications for the permissions requested by the "English Writer
 
 4.  **Permission: `contextMenus`** (Right-click menu)
 
-    *   **Justification:** "To add a convenient 'Translate with English Writer' option to your right-click menu. This allows you to quickly select Chinese text anywhere on a webpage and get an English translation with style suggestions, offering an alternative way to access writing help without typing."
+    *   **Justification:** "To add a convenient translation option to your right-click menu. This allows you to quickly select text anywhere on a webpage and get an English translation with style suggestions, offering an alternative way to access writing help without typing."
 
 5.  **Host Permission: `https://generativelanguage.googleapis.com/`**
 
-    *   **Justification:** "To securely connect to and communicate with Google's Gemini API. This permission is vital as it allows the extension to send the Chinese text you've typed or selected to the Gemini service and receive back the high-quality English translation and style suggestions that form the core of its assistance."
+    *   **Justification:** "To securely connect to and communicate with Google's Gemini API. This permission is vital as it allows the extension to send only the text you've typed or selected to the Gemini service and receive back the high-quality English translation and style suggestions that form the core of its assistance."
+
+6.  **Host Permission: `https://api.openai.com/`**
+
+    *   **Justification:** "To securely connect to and communicate with OpenAI's API when OpenAI is selected as the translation provider. This allows the extension to send only the text you've typed or selected to OpenAI and receive the English translation and style suggestion."

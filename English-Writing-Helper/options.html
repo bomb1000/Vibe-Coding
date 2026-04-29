@@ -1,60 +1,153 @@
 <!DOCTYPE html>
-<html>
+<html data-i18n-title-key="pageTitleOptions">
 <head>
   <meta charset="UTF-8">
-  <title>英文寫作助手設定</title>
+  <title>English Writing Helper Settings</title>
   <style>
-    body { font-family: sans-serif; padding: 20px; width: 400px; }
+    body { font-family: sans-serif; padding: 20px; width: 460px; color: #222; }
     .form-group { margin-bottom: 15px; }
+    .section { border-top: 1px solid #ddd; padding-top: 16px; margin-top: 18px; }
+    .section h2 { font-size: 18px; margin: 0 0 10px; }
     label { display: block; margin-bottom: 5px; }
     input[type="text"], select { width: 100%; padding: 8px; box-sizing: border-box; }
     button { padding: 10px 15px; background-color: #4CAF50; color: white; border: none; cursor: pointer; }
     button:hover { background-color: #45a049; }
+    button.secondary { background-color: #666; margin-left: 8px; }
+    button.secondary:hover { background-color: #555; }
+    .guide-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+    .guide-link { display: inline-block; padding: 9px 12px; border-radius: 4px; background: #4CAF50; color: white; text-decoration: none; font-size: 14px; }
+    .guide-link.secondary { background: #555; }
+    .guide-link:hover { opacity: 0.9; }
+    textarea { width: 100%; min-height: 120px; padding: 8px; box-sizing: border-box; resize: vertical; }
+    .hint { color: #555; font-size: 13px; line-height: 1.4; margin: 6px 0 0; }
     .status { margin-top: 10px; font-style: italic; }
+    .shortcut-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .whats-new-notice { border: 1px solid #cab9e8; border-radius: 6px; background: #f4efff; color: #301934; padding: 12px; margin: 0 0 16px; line-height: 1.45; }
+    .whats-new-notice p { margin: 6px 0; }
+    .whats-new-notice button { background: #8a6bbd; margin-top: 4px; }
+    .whats-new-notice button:hover { background: #6c4f9d; }
   </style>
 </head>
 <body>
-  <h1>設定</h1>
+  <h1 data-i18n="settingsTitle">Settings</h1>
+  <div id="whatsNewNotice" class="whats-new-notice" hidden>
+    <strong data-i18n="whatsNewTitle">English Writing Helper was updated</strong>
+    <p id="whatsNewVersionLine"></p>
+    <p data-i18n="whatsNewBody">New in this version: multilingual interface, Feedback / Wishlist, custom prompts with quick writing styles, and privacy-friendly anonymous usage statistics.</p>
+    <button type="button" id="dismissWhatsNew" data-i18n="whatsNewDismiss">Got it</button>
+  </div>
+
+  <div class="section">
+    <h2 data-i18n="languageSectionTitle">0. Display language</h2>
+    <p class="hint" data-i18n="languageHint">Auto detect follows your Chrome or system language. You can override it here anytime.</p>
+  </div>
 
   <div class="form-group">
-    <label for="apiProvider">API 服務商:</label>
+    <label for="uiLanguage" data-i18n="uiLanguageLabel">Interface language:</label>
+    <select id="uiLanguage">
+      <option value="auto" data-i18n="uiLanguageAuto">Auto detect</option>
+      <option value="zh_TW" data-i18n="uiLanguageZhTw">Traditional Chinese</option>
+      <option value="en" data-i18n="uiLanguageEn">English</option>
+      <option value="ja" data-i18n="uiLanguageJa">日本語</option>
+      <option value="ko" data-i18n="uiLanguageKo">한국어</option>
+      <option value="es" data-i18n="uiLanguageEs">Español</option>
+    </select>
+  </div>
+
+  <div class="section">
+    <h2 data-i18n="aiServiceTitle">1. Choose AI service</h2>
+    <p class="hint" data-i18n="aiServiceHint">For first-time users, Gemini is usually easier to set up. You can also use OpenAI.</p>
+  </div>
+
+  <div class="form-group">
+    <label for="apiProvider" data-i18n="apiProviderLabel">API provider:</label>
     <select id="apiProvider">
       <option value="gemini">Google Gemini</option>
       <option value="openai">OpenAI (ChatGPT)</option>
     </select>
   </div>
 
+  <div class="form-group">
+    <strong data-i18n="noApiKeyTitle">No API Key yet?</strong>
+    <p class="hint" data-i18n="noApiKeyHint">An API Key is your own AI access pass. Open the official site below, create a key, then paste it here.</p>
+    <div class="guide-actions">
+      <a id="geminiApiKeyGuide" class="guide-link" href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" data-i18n="getGeminiKey">Get Gemini API Key</a>
+      <a id="openaiApiKeyGuide" class="guide-link secondary" href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" data-i18n="getOpenAIKey">Get OpenAI API Key</a>
+    </div>
+  </div>
+
   <div class="form-group" id="geminiKeyGroup">
-    <label for="apiKey">Gemini API 金鑰:</label>
-    <input type="text" id="apiKey" placeholder="在此輸入你的 Gemini API Key">
+    <label for="apiKey" data-i18n="geminiApiKeyLabel">Gemini API Key:</label>
+    <input type="text" id="apiKey" placeholder="Enter your Gemini API Key here" data-i18n-placeholder="geminiApiKeyPlaceholder">
     <div>
-      <p>Current Gemini Model: <span id="currentGeminiModel">Loading...</span></p>
-      <label for="geminiModelSelect">Select Gemini Model:</label>
+      <p><span data-i18n="currentGeminiModel">Current Gemini Model:</span> <span id="currentGeminiModel">Loading...</span></p>
+      <label for="geminiModelSelect" data-i18n="selectGeminiModel">Select Gemini Model:</label>
       <select id="geminiModelSelect" name="geminiModelSelect"></select>
     </div>
   </div>
 
   <div class="form-group" id="openaiKeyGroup" style="display:none;">
-    <label for="openaiApiKey">OpenAI API 金鑰:</label>
-    <input type="text" id="openaiApiKey" placeholder="在此輸入你的 OpenAI API Key">
+    <label for="openaiApiKey" data-i18n="openaiApiKeyLabel">OpenAI API Key:</label>
+    <input type="text" id="openaiApiKey" placeholder="Enter your OpenAI API Key here" data-i18n-placeholder="openaiApiKeyPlaceholder">
     <div>
-      <p>Current OpenAI Model: <span id="currentOpenAIModel">Loading...</span></p>
-      <label for="openaiModelSelect">Select OpenAI Model:</label>
+      <p><span data-i18n="currentOpenAIModel">Current OpenAI Model:</span> <span id="currentOpenAIModel">Loading...</span></p>
+      <label for="openaiModelSelect" data-i18n="selectOpenAIModel">Select OpenAI Model:</label>
       <select id="openaiModelSelect" name="openaiModelSelect"></select>
     </div>
   </div>
 
-  <div class="form-group">
-    <label for="writingStyle">預設英文風格:</label>
-    <select id="writingStyle">
-      <option value="formal">正式寫作 (Formal)</option>
-      <option value="casual">輕鬆口語 (Casual)</option>
-    </select>
+  <div class="section">
+    <h2 data-i18n="writingStyleTitle">2. Writing style</h2>
   </div>
 
-  <button id="saveOptions">儲存設定</button>
+  <div class="form-group">
+    <label for="writingStyle" data-i18n="writingStyleLabel">Quick style:</label>
+    <select id="writingStyle">
+      <option value="formal" data-i18n="styleFormal">Formal writing</option>
+      <option value="casual" data-i18n="styleCasual">Casual conversation</option>
+    </select>
+    <p class="hint" data-i18n="writingStyleHint">Most users can just choose a style here. The custom prompt below is advanced and overrides this style when enabled.</p>
+  </div>
+
+  <div class="form-group">
+    <label>
+      <input type="checkbox" id="customPromptEnabled"> <span data-i18n="customPromptEnabled">Use custom translation instruction</span>
+    </label>
+    <p class="hint" data-i18n="customPromptHint">Use this to specify tone, format, audience, or special translation rules. You do not need to paste the source text.</p>
+    <textarea id="customPrompt" placeholder="Example: Translate the text into natural, concise business email English. Only output the English translation." data-i18n-placeholder="customPromptPlaceholder"></textarea>
+    <button type="button" id="resetPrompt" class="secondary" data-i18n="resetPrompt">Reset default instruction</button>
+  </div>
+
+  <div class="section">
+    <h2 data-i18n="shortcutTitle">3. Shortcut</h2>
+  </div>
+
+  <div class="form-group">
+    <div class="shortcut-row">
+      <button type="button" id="openShortcutSettings" class="secondary" data-i18n="openShortcutSettings">Set translation shortcut</button>
+      <span class="hint" data-i18n="shortcutHint">Find “Translate selected text” on Chrome’s shortcuts page to set your one-step translation shortcut.</span>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2 data-i18n="privacyTitle">4. Privacy-friendly usage reporting</h2>
+  </div>
+
+  <div class="form-group">
+    <label>
+      <input type="checkbox" id="anonymousUsageEnabled"> <span data-i18n="anonymousUsageLabel">Help improve this product by sending anonymous usage statistics</span>
+    </label>
+    <p class="hint" data-i18n="anonymousUsageHint">Only counts such as translation attempts, character counts, writing style, provider, and extension version are sent. Source text, translated text, API keys, page URLs, and browsing history are never sent.</p>
+  </div>
+
+  <div class="section">
+    <h2 data-i18n="saveTitle">5. Save</h2>
+  </div>
+
+  <button id="saveOptions" data-i18n="saveOptions">Save settings</button>
   <div id="status" class="status"></div>
 
+  <script src="i18n.js"></script>
   <script src="options.js"></script>
 </body>
 </html> 

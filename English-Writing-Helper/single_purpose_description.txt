@@ -1,1 +1,1 @@
-Improves English writing by offering instant Traditional Chinese to English translation and style choices (formal/conversational) directly in website input fields.
+Helps non-native English writers translate and polish text into English directly in website input fields, with formal, casual, and custom writing styles.

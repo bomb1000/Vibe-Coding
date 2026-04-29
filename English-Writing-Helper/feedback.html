@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html data-i18n-title-key="pageTitleFeedback">
+<head>
+  <meta charset="UTF-8">
+  <title>Feedback / Wishlist</title>
+  <style>
+    body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #222; margin: 0; background: #f7f5fb; }
+    main { max-width: 680px; margin: 0 auto; padding: 28px 20px 36px; }
+    h1 { margin: 0 0 8px; font-size: 28px; }
+    p { line-height: 1.5; }
+    .panel { background: #fff; border: 1px solid #ddd4ef; border-radius: 8px; padding: 18px; margin-top: 16px; }
+    label { display: block; font-weight: 600; margin: 14px 0 6px; }
+    select, input, textarea { width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid #bbb; border-radius: 6px; font: inherit; }
+    textarea { min-height: 150px; resize: vertical; }
+    .hint { color: #555; font-size: 13px; margin-top: 5px; }
+    .meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; font-size: 13px; color: #444; }
+    .meta div { background: #f4efff; border-radius: 6px; padding: 8px; word-break: break-word; }
+    .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+    button { border: none; border-radius: 6px; padding: 11px 14px; cursor: pointer; font-weight: 700; }
+    #openIssue { background: #6f4fb3; color: #fff; }
+    #copyFeedback { background: #e8e2f7; color: #301934; }
+    #status { margin-top: 12px; color: #2f6f3a; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1 data-i18n="feedbackWishlist">Feedback / Wishlist</h1>
+    <p data-i18n="feedbackIntro">Thanks for reporting. You can describe a problem, request a feature, or share how you use the extension.</p>
+
+    <section class="panel">
+      <label for="feedbackType" data-i18n="feedbackTypeLabel">Feedback type</label>
+      <select id="feedbackType">
+        <option value="problem" data-i18n="feedbackProblem">I found a problem</option>
+        <option value="wish" data-i18n="feedbackWish">I have a feature wish</option>
+        <option value="experience" data-i18n="feedbackExperience">I want to share feedback</option>
+      </select>
+
+      <label for="scenario" data-i18n="scenarioLabel">Usage scenario</label>
+      <select id="scenario">
+        <option value="general" data-i18n="scenarioGeneral">General website</option>
+        <option value="email" data-i18n="scenarioEmail">Email / Gmail</option>
+        <option value="social" data-i18n="scenarioSocial">Social post</option>
+        <option value="chat" data-i18n="scenarioChat">Chat message</option>
+        <option value="docs" data-i18n="scenarioDocs">Docs / notes</option>
+        <option value="other" data-i18n="scenarioOther">Other</option>
+      </select>
+
+      <label for="message" data-i18n="messageLabel">Message</label>
+      <textarea id="message" placeholder="Describe what happened, what you want added, or how you use this extension." data-i18n-placeholder="messagePlaceholder"></textarea>
+
+      <label for="email" data-i18n="emailLabel">Email (optional)</label>
+      <input id="email" type="email" placeholder="Leave an email if you are open to follow-up questions" data-i18n-placeholder="emailPlaceholder">
+      <p class="hint" data-i18n="feedbackPrivacyHint">Your translation text, current URL, API key, and browsing history are not attached automatically.</p>
+    </section>
+
+    <section class="panel">
+      <div class="meta">
+        <div><span data-i18n="feedbackIdLabel">Anonymous feedback ID:</span> <span id="feedbackId">Loading...</span></div>
+        <div><span data-i18n="extensionVersionLabel">Extension version:</span> <span id="extensionVersion">Loading...</span></div>
+        <div><span data-i18n="aiProviderLabel">AI provider:</span> <span id="apiProvider">Loading...</span></div>
+      </div>
+      <div class="actions">
+        <button id="openIssue" type="button" data-i18n="openIssue">Send to GitHub Issues</button>
+        <button id="copyFeedback" type="button" data-i18n="copyFeedback">Copy feedback</button>
+      </div>
+      <div id="status" role="status"></div>
+    </section>
+  </main>
+  <script src="i18n.js"></script>
+  <script src="feedback.js"></script>
+</body>
+</html>

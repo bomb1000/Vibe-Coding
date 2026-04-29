@@ -72,6 +72,7 @@
   line-height: 1.5;
   display: flex;
   flex-direction: column;
+  cursor: move;
 
   /* === Animation specific - Initial State === */
   transform-origin: top right;
@@ -94,55 +95,6 @@
                 visibility 0s 0s;
 }
 
-/*
-#ew-sidebar.ew-sidebar-collapsed {
-  transform: translateX(calc(100% - 22px));
-}
-*/
-
-/*
-#ew-sidebar-toggle {
-  position: absolute;
-  left: 0px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 24px; 
-  height: 48px; 
-  background-color: var(--ew-themed-button-bg);
-  border: 1px solid var(--ew-themed-button-border);
-  border-right: none; 
-  border-top-left-radius: 6px; 
-  border-bottom-left-radius: 6px; 
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: bold; 
-  color: var(--ew-themed-button-text);
-  user-select: none;
-  box-shadow: -1px 0px 2px rgba(0,0,0,.1); 
-}
-#ew-sidebar-toggle:hover {
-  background-color: var(--ew-themed-button-hover-bg);
-  color: var(--ew-themed-button-hover-text);
-  border-color: var(--ew-themed-button-hover-border);
-  border-right: none;
-}
-
-#ew-sidebar.ew-sidebar-collapsed #ew-sidebar-toggle {
-  background: linear-gradient(135deg, var(--ew-lavender-gradient-start) 0%, var(--ew-lavender-gradient-end) 100%);
-  border-color: var(--ew-lavender-accent-dark);
-  color: var(--ew-themed-button-text);
-  border-right: none; 
-}
-
-#ew-sidebar.ew-sidebar-collapsed #ew-sidebar-toggle:hover {
-  background: linear-gradient(135deg, var(--ew-lavender-gradient-hover-start) 0%, var(--ew-lavender-gradient-hover-end) 100%);
-  border-color: var(--ew-lavender-accent-dark); 
-  border-right: none;
-}
-*/
-
 #ew-sidebar-fixed-controls {
   display: flex; /* Use flex to arrange its own children */
   flex-direction: column; /* Stack children vertically */
@@ -153,6 +105,16 @@
   font-family: "Poppins", "Nunito", "Inter", system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
 }
 
+#ew-sidebar-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 6px 0;
+  padding: 0 24px 4px 0;
+  border-bottom: 1px solid var(--ew-lavender-accent);
+}
+
 #ew-sidebar-header {
   cursor: move;
   user-select: none;
@@ -160,15 +122,57 @@
   font-size: 16px;
   font-weight: 600;
   color: var(--ew-header-text-color);
-  margin: 0 0 6px 0; /* Further Reduced bottom margin */
-  padding: 0 0 4px 0; /* Further Reduced bottom padding */
-  border-bottom: 1px solid var(--ew-lavender-accent);
+  margin: 0;
+  padding: 0;
+  border-bottom: none;
+}
+
+#ew-options-button {
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--ew-themed-button-border);
+  border-radius: 50%;
+  background: #fff8ff;
+  color: var(--ew-lavender-text-primary);
+  cursor: pointer;
+  font-size: 0;
+  font-weight: 700;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0;
+  margin-left: auto;
+  box-shadow: 0 1px 3px rgba(48, 25, 52, 0.18);
+  position: relative;
+}
+
+#ew-options-button::before {
+  content: "⚙";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  font-size: 19px;
+  line-height: 1;
+  transform: translate(-50%, -53%) rotate(-10deg);
+}
+
+#ew-options-button:hover {
+  background: var(--ew-themed-button-bg);
+  color: var(--ew-themed-button-text);
+}
+
+#ew-options-button:hover::before {
+  transform: translate(-50%, -53%) rotate(12deg) scale(1.05);
 }
 
 #ew-font-shortcut-wrapper {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
   padding: 2px 0; /* Further Reduced padding */
   margin-bottom: 6px; /* Further Space before copy button */
   border-bottom: 1px solid var(--ew-lavender-accent);
@@ -199,6 +203,8 @@
   border-bottom: none;
   text-align: right; /* Align to the right within the flex wrapper */
   flex-shrink: 0;
+  margin-left: auto;
+  flex-basis: 100%;
 }
 
 #ew-sidebar-content {
@@ -217,6 +223,7 @@
   font-size: 0.9em; 
   background-color: var(--ew-lavender-content-bg); /* New background */
   color: #000000; /* Black text as requested */
+  cursor: text;
 } 
 
 #ew-copy-button {
@@ -243,6 +250,63 @@
   color: var(--ew-themed-button-hover-text);
   border-color: var(--ew-themed-button-hover-border);
   box-shadow: 0 1px 1px 0 rgba(0,0,0,.1); 
+}
+
+#ew-feedback-button {
+  background-color: transparent;
+  color: var(--ew-lavender-text-secondary);
+  border: 1px solid var(--ew-lavender-accent-dark);
+  padding: 5px 9px;
+  text-align: center;
+  font-size: 0.78em;
+  font-weight: 500;
+  border-radius: 4px;
+  cursor: pointer;
+  width: auto;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+#ew-feedback-button:hover {
+  background-color: var(--ew-lavender-content-bg);
+  color: var(--ew-lavender-text-primary);
+}
+
+#ew-whats-new-notice {
+  border: 1px solid var(--ew-lavender-accent-dark);
+  border-radius: 6px;
+  background: var(--ew-lavender-content-bg);
+  color: var(--ew-lavender-text-primary);
+  padding: 8px;
+  margin: 2px 0 6px;
+  line-height: 1.35;
+  cursor: default;
+}
+
+#ew-whats-new-notice strong {
+  display: block;
+  font-size: 0.86em;
+}
+
+#ew-whats-new-notice p {
+  margin: 4px 0;
+  font-size: 0.78em;
+}
+
+#ew-whats-new-dismiss {
+  background-color: var(--ew-themed-button-bg);
+  color: var(--ew-themed-button-text);
+  border: 1px solid var(--ew-themed-button-border);
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 4px 8px;
+  font-size: 0.78em;
+}
+
+#ew-whats-new-dismiss:hover {
+  background-color: var(--ew-themed-button-hover-bg);
+  border-color: var(--ew-themed-button-hover-border);
 }
 
 /* Optional: Styles for a disabled state if you choose to use it
@@ -322,6 +386,40 @@
   cursor: ew-resize; /* Typically right handle is for horizontal resize */
   z-index: 100001;
   border-right: 1px solid var(--ew-resize-handle-border-color);
+}
+
+#ew-resize-handle-top-left,
+#ew-resize-handle-top-right,
+#ew-resize-handle-bottom-left,
+#ew-resize-handle-bottom-right {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  z-index: 100002;
+}
+
+#ew-resize-handle-top-left {
+  top: -6px;
+  left: -6px;
+  cursor: nwse-resize;
+}
+
+#ew-resize-handle-top-right {
+  top: -6px;
+  right: -6px;
+  cursor: nesw-resize;
+}
+
+#ew-resize-handle-bottom-left {
+  bottom: -6px;
+  left: -6px;
+  cursor: nesw-resize;
+}
+
+#ew-resize-handle-bottom-right {
+  bottom: -6px;
+  right: -6px;
+  cursor: nwse-resize;
 }
 
 /* Ensure body scrollbar doesn't jump when sidebar is fixed */

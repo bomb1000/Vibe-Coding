@@ -2,7 +2,7 @@
 English Writer with Gemini
 
 **Item Summary:**
-Get instant English writing help. Translate Chinese (Trad.) & choose formal/conversational styles with Gemini.
+Get instant English writing help. Translate text into English and choose formal/conversational styles with Gemini or OpenAI.
 
 **Main Description:**
 
@@ -10,10 +10,12 @@ Effortlessly improve your English writing across the web with English Writer, po
 
 **Key Features:**
 
-*   **Real-time Translation:** Instantly translate Traditional Chinese to English as you type.
+*   **Real-time Translation:** Instantly translate non-English text into English as you type or from selected text.
 *   **Style Options:** Choose between Formal and Conversational English to suit your needs.
-*   **Gemini Powered:** Leverages Google's Gemini API for high-quality writing suggestions.
-*   **Customizable:** Use your own Gemini API key and set a default writing style (Formal/Conversational).
+*   **Custom Translation Instructions:** Advanced users can define their own translation prompt for specific tones, formats, or contexts.
+*   **Gemini/OpenAI Powered:** Use Google's Gemini API or OpenAI models for high-quality writing suggestions.
+*   **Customizable:** Use your own Gemini or OpenAI API key and set a default writing style (Formal/Conversational).
+*   **Display Language:** The interface follows your Chrome/system language by default, with a manual language override in settings.
 *   **Flexible Display:** View suggestions in a convenient sidebar or directly below your input field.
 *   **Easy Control:** Quickly toggle the extension on or off as needed.
 
@@ -26,9 +28,25 @@ Effortlessly improve your English writing across the web with English Writer, po
 
 **Important Notes:**
 
-*   **API Key Required:** This extension requires your own Google Gemini API key to function.
-*   **Potential API Costs:** Use of the Gemini API may incur costs based on your usage. Please refer to Google's Gemini API pricing for details.
+*   **API Key Required:** This extension requires your own Google Gemini or OpenAI API key to function.
+*   **Potential API Costs:** Use of the selected AI API may incur costs based on your usage. Please refer to the provider's pricing for details.
+*   **Privacy-Friendly Usage Reporting:** Anonymous usage statistics can be enabled to help improve the product. The extension counts translation attempts and character totals, but does not send source text, translated text, API keys, page URLs, or browsing history.
 *   **Current Limitations:** Works best with standard HTML input fields and textareas. Support for some rich-text editors may be limited.
-*   **Focus:** Currently supports Traditional Chinese to English translation.
+*   **Focus:** Designed for non-native English writers who want to translate and practice writing in English.
+
+**Local Smoke Test:**
+
+Run the automated unpacked-extension smoke test before packaging:
+
+```bash
+node scripts/smoke-test-extension.js
+```
+
+To test a real API call, provide one API key through the environment:
+
+```bash
+EW_GEMINI_API_KEY=your_key node scripts/smoke-test-extension.js
+EW_OPENAI_API_KEY=your_key node scripts/smoke-test-extension.js
+```
 
 For the Chinese (Traditional) version of this description, please see [README_zh.md](README_zh.md).

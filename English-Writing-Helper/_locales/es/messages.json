@@ -1,0 +1,11 @@
+{
+  "extName": {
+    "message": "English Writing Helper"
+  },
+  "extShortName": {
+    "message": "English Helper"
+  },
+  "extDescription": {
+    "message": "Traduce y mejora textos en inglés con estilos formales, informales o personalizados."
+  }
+}

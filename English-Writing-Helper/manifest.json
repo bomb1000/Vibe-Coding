@@ -1,8 +1,10 @@
 {
   "manifest_version": 3,
-  "name": "英文寫作助手 (Gemini)",
-  "version": "0.1.1",
-  "description": "使用繁體中文輸入，即時顯示英文寫法，並可選擇正式或口語風格。",
+  "name": "__MSG_extName__",
+  "short_name": "__MSG_extShortName__",
+  "version": "0.2.2",
+  "default_locale": "en",
+  "description": "__MSG_extDescription__",
   "permissions": [
     "storage",
     "activeTab",
@@ -10,7 +12,8 @@
     "contextMenus"
   ],
   "host_permissions": [
-    "https://generativelanguage.googleapis.com/"
+    "https://generativelanguage.googleapis.com/",
+    "https://api.openai.com/"
   ],
   "background": {
     "service_worker": "background.js"
@@ -18,7 +21,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content.js"],
+      "js": ["i18n.js", "content.js"],
       "css": ["styles.css"],
       "run_at": "document_idle",
       "all_frames": true
