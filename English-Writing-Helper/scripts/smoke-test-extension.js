@@ -105,6 +105,16 @@ async function configureOptionalApiKey(worker) {
     });
   }), settings);
 
+  await worker.evaluate(() => new Promise((resolve, reject) => {
+    chrome.storage.local.set({ ewUsageIsTestProfile: true }, () => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+      } else {
+        resolve();
+      }
+    });
+  }));
+
   return { provider, liveApi: true };
 }
 

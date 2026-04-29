@@ -317,8 +317,11 @@ async function sendRemoteUsageEvent(event) {
   }
 }
 
-async function recordUsageEvent({ sourceText, translatedText = '', status, provider, style, source }) {
-  const settings = await storageSyncGet(['anonymousUsageEnabled']);
+async function recordUsageEvent({ sourceText, translatedText = '', status, provider, model, style, source }) {
+  const [settings, localFlags] = await Promise.all([
+    storageSyncGet(['anonymousUsageEnabled']),
+    storageLocalGet(['ewUsageIsTestProfile']),
+  ]);
   if (settings.anonymousUsageEnabled !== true) return;
 
   const event = {
@@ -328,10 +331,12 @@ async function recordUsageEvent({ sourceText, translatedText = '', status, provi
     sourceCharCount: countCharacters(sourceText),
     outputCharCount: countCharacters(translatedText),
     provider: provider || 'unknown',
+    model: model || 'unknown',
     style: style || 'formal',
     source: source || 'unknown',
     extensionVersion: chrome.runtime.getManifest().version,
-    dateBucket: getDateBucket()
+    dateBucket: getDateBucket(),
+    isTest: localFlags.ewUsageIsTestProfile === true,
   };
 
   await updateLocalUsageStats(event);
@@ -339,8 +344,11 @@ async function recordUsageEvent({ sourceText, translatedText = '', status, provi
 }
 
 async function translateAndTrack(text, style, source) {
-  const settings = await storageSyncGet(['apiProvider', 'writingStyle']);
+  const settings = await storageSyncGet(['apiProvider', 'writingStyle', 'geminiUserSelectedModel', 'openaiUserSelectedModel']);
   const provider = settings.apiProvider || 'gemini';
+  const model = provider === 'openai'
+    ? settings.openaiUserSelectedModel || 'gpt-5.4-mini'
+    : settings.geminiUserSelectedModel || 'gemini-2.5-flash';
   const currentStyle = style || settings.writingStyle || 'formal';
   try {
     const result = await handleTranslationRequest(text, currentStyle);
@@ -349,6 +357,7 @@ async function translateAndTrack(text, style, source) {
       translatedText: result.translatedText || '',
       status: 'success',
       provider,
+      model,
       style: currentStyle,
       source
     });
@@ -359,6 +368,7 @@ async function translateAndTrack(text, style, source) {
       translatedText: '',
       status: 'failed',
       provider,
+      model,
       style: currentStyle,
       source
     });

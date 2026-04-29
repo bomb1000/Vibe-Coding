@@ -17,6 +17,20 @@ const HTML_HEADERS = {
 const ALLOWED_EVENTS = new Set(['translation_completed']);
 const ALLOWED_STATUSES = new Set(['success', 'failed']);
 const MAX_BODY_BYTES = 4096;
+const CHARS_PER_TOKEN_ESTIMATE = 4;
+const MODEL_PRICES = {
+  openai: {
+    'gpt-5.4': { input: 2.5, output: 15 },
+    'gpt-5.4-mini': { input: 0.75, output: 4.5 },
+    'gpt-5.4-nano': { input: 0.2, output: 1.25 },
+  },
+  gemini: {
+    'gemini-3-flash-preview': { input: 0.5, output: 3 },
+    'gemini-2.5-pro': { input: 1.25, output: 10 },
+    'gemini-2.5-flash': { input: 0.3, output: 2.5 },
+    'gemini-2.5-flash-lite': { input: 0.1, output: 0.4 },
+  },
+};
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: JSON_HEADERS });
@@ -56,6 +70,29 @@ function percent(part, total) {
   return `${Math.round((Number(part || 0) / denominator) * 100)}%`;
 }
 
+function estimateTokens(charCount) {
+  return Math.ceil(Number(charCount || 0) / CHARS_PER_TOKEN_ESTIMATE);
+}
+
+function getModelPrice(provider, model) {
+  return MODEL_PRICES[String(provider || '').toLowerCase()]?.[String(model || '').toLowerCase()] || null;
+}
+
+function estimateUsd(provider, model, sourceChars, outputChars) {
+  const price = getModelPrice(provider, model);
+  if (!price) return 0;
+  const inputTokens = estimateTokens(sourceChars);
+  const outputTokens = estimateTokens(outputChars);
+  return ((inputTokens * price.input) + (outputTokens * price.output)) / 1000000;
+}
+
+function money(value) {
+  const amount = Number(value || 0);
+  if (amount === 0) return '$0.0000';
+  if (amount < 0.0001) return '< $0.0001';
+  return `$${amount.toFixed(4)}`;
+}
+
 function getCookie(request, name) {
   const cookie = request.headers.get('Cookie') || '';
   const prefix = `${name}=`;
@@ -88,16 +125,18 @@ function normalizeEvent(input) {
     sourceCharCount: cleanCount(input.sourceCharCount),
     outputCharCount: cleanCount(input.outputCharCount),
     provider: cleanText(input.provider, 'unknown', 40),
+    model: cleanText(input.model, 'unknown', 80),
     style: cleanText(input.style, 'formal', 40),
     source: cleanText(input.source, 'unknown', 40),
     extensionVersion: cleanText(input.extensionVersion, 'unknown', 30),
-    dateBucket
+    dateBucket,
+    isTest: input.isTest === true || input.isTest === 1 ? 1 : 0
   };
 }
 
 async function storeUsage(env, event) {
   await env.DB.prepare(
-    'INSERT INTO usage_events (anonymous_user_id, event, status, source_char_count, output_char_count, provider, style, source, extension_version, date_bucket) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO usage_events (anonymous_user_id, event, status, source_char_count, output_char_count, provider, model, style, source, extension_version, date_bucket, is_test) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).bind(
     event.anonymousUserId,
     event.event,
@@ -105,10 +144,12 @@ async function storeUsage(env, event) {
     event.sourceCharCount,
     event.outputCharCount,
     event.provider,
+    event.model,
     event.style,
     event.source,
     event.extensionVersion,
-    event.dateBucket
+    event.dateBucket,
+    event.isTest
   ).run();
 
   await env.DB.prepare([
@@ -145,19 +186,39 @@ async function getDashboardData(env) {
     'SUM(source_char_count) AS source_char_count,',
     'SUM(output_char_count) AS output_char_count,',
     'COUNT(DISTINCT anonymous_user_id) AS unique_users',
-    'FROM usage_events'
+    'FROM usage_events WHERE is_test = 0'
+  ].join(' ')).first();
+
+  const testTotals = await env.DB.prepare([
+    'SELECT COUNT(*) AS total_events,',
+    'SUM(source_char_count) AS source_char_count,',
+    'SUM(output_char_count) AS output_char_count,',
+    'COUNT(DISTINCT anonymous_user_id) AS unique_users',
+    'FROM usage_events WHERE is_test = 1'
   ].join(' ')).first();
 
   const daily = await env.DB.prepare(
-    'SELECT date_bucket, total_events, successful_translations, failed_translations, source_char_count, output_char_count, unique_users FROM daily_usage_summary ORDER BY date_bucket DESC LIMIT 14'
+    [
+      'SELECT date_bucket, COUNT(*) AS total_events,',
+      "SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS successful_translations,",
+      "SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed_translations,",
+      'SUM(source_char_count) AS source_char_count, SUM(output_char_count) AS output_char_count,',
+      'COUNT(DISTINCT anonymous_user_id) AS unique_users',
+      'FROM usage_events WHERE is_test = 0',
+      'GROUP BY date_bucket ORDER BY date_bucket DESC LIMIT 14'
+    ].join(' ')
   ).all();
 
   const versions = await env.DB.prepare(
-    'SELECT extension_version, COUNT(*) AS events, COUNT(DISTINCT anonymous_user_id) AS unique_users FROM usage_events GROUP BY extension_version ORDER BY events DESC LIMIT 10'
+    'SELECT extension_version, COUNT(*) AS events, COUNT(DISTINCT anonymous_user_id) AS unique_users FROM usage_events WHERE is_test = 0 GROUP BY extension_version ORDER BY events DESC LIMIT 10'
   ).all();
 
   const providers = await env.DB.prepare(
-    'SELECT provider, COUNT(*) AS events, COUNT(DISTINCT anonymous_user_id) AS unique_users FROM usage_events GROUP BY provider ORDER BY events DESC LIMIT 10'
+    'SELECT provider, COUNT(*) AS events, COUNT(DISTINCT anonymous_user_id) AS unique_users FROM usage_events WHERE is_test = 0 GROUP BY provider ORDER BY events DESC LIMIT 10'
+  ).all();
+
+  const models = await env.DB.prepare(
+    'SELECT provider, model, COUNT(*) AS events, COUNT(DISTINCT anonymous_user_id) AS unique_users, SUM(source_char_count) AS source_char_count, SUM(output_char_count) AS output_char_count FROM usage_events WHERE is_test = 0 GROUP BY provider, model ORDER BY events DESC LIMIT 20'
   ).all();
 
   const users = await env.DB.prepare([
@@ -165,19 +226,39 @@ async function getDashboardData(env) {
     "SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS successful_translations,",
     "SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed_translations,",
     'SUM(source_char_count) AS source_char_count,',
+    'MAX(model) AS latest_model, MAX(extension_version) AS latest_version,',
+    'MIN(received_at) AS first_seen, MAX(received_at) AS last_seen',
+    'FROM usage_events',
+    'WHERE is_test = 0',
+    'GROUP BY anonymous_user_id',
+    'ORDER BY last_seen DESC LIMIT 50'
+  ].join(' ')).all();
+
+  const testUsers = await env.DB.prepare([
+    'SELECT anonymous_user_id, COUNT(*) AS translation_events,',
+    'MAX(provider) AS provider, MAX(model) AS model,',
     'MAX(extension_version) AS latest_version,',
     'MIN(received_at) AS first_seen, MAX(received_at) AS last_seen',
     'FROM usage_events',
+    'WHERE is_test = 1',
     'GROUP BY anonymous_user_id',
     'ORDER BY last_seen DESC LIMIT 50'
   ].join(' ')).all();
 
   return {
     totals: totals || {},
+    testTotals: testTotals || {},
     daily: daily.results || [],
     versions: versions.results || [],
     providers: providers.results || [],
+    models: (models.results || []).map(row => {
+      const inputTokens = estimateTokens(row.source_char_count);
+      const outputTokens = estimateTokens(row.output_char_count);
+      const estimatedCost = estimateUsd(row.provider, row.model, row.source_char_count, row.output_char_count);
+      return { ...row, input_tokens: inputTokens, output_tokens: outputTokens, estimated_cost_usd: estimatedCost };
+    }),
     users: users.results || [],
+    testUsers: testUsers.results || [],
     generatedAt: new Date().toISOString()
   };
 }
@@ -194,9 +275,11 @@ function table(rows, columns) {
 
 function renderDashboard(data) {
   const totals = data.totals || {};
+  const testTotals = data.testTotals || {};
   const avgInput = totals.total_events ? Math.round(Number(totals.source_char_count || 0) / Number(totals.total_events || 1)) : 0;
   const avgOutput = totals.total_events ? Math.round(Number(totals.output_char_count || 0) / Number(totals.total_events || 1)) : 0;
   const dailyRows = data.daily.map(row => ({ ...row, success_rate: percent(row.successful_translations, row.total_events) }));
+  const estimatedCost = data.models.reduce((sum, row) => sum + Number(row.estimated_cost_usd || 0), 0);
 
   return `<!doctype html>
 <html lang="zh-Hant">
@@ -224,6 +307,7 @@ function renderDashboard(data) {
       <div class="card"><div class="label">成功率</div><div class="value">${percent(totals.successful_translations, totals.total_events)}</div><div class="hint">${number(totals.successful_translations)} 成功 / ${number(totals.failed_translations)} 失敗</div></div>
       <div class="card"><div class="label">平均字數</div><div class="value">${number(avgInput)} -> ${number(avgOutput)}</div><div class="hint">每次翻譯的輸入 -> 輸出</div></div>
     </div>
+    <section><h2>測試資料隔離</h2><p class="note">正式統計已排除測試資料。目前測試資料有 ${number(testTotals.total_events)} 次翻譯、${number(testTotals.unique_users)} 個測試 user ID。下面有獨立清單，方便辨認。</p></section>
     <section><h2>每天使用情況</h2>${table(dailyRows, [
       { key: 'date_bucket', label: '日期' },
       { key: 'total_events', label: '翻譯次數', format: number },
@@ -244,12 +328,31 @@ function renderDashboard(data) {
         { key: 'unique_users', label: '匿名使用者', format: number }
       ])}</section>
     </div>
+    <section><h2>Model 與成本估算</h2><p class="note">目前是估算，不是帳單。估算方式：約 ${CHARS_PER_TOKEN_ESTIMATE} 個字元算 1 token，再套用目前已知的標準 API 價格。實際帳單可能因免費額度、快取、thinking tokens、匯率、方案或價格變動而不同。總估算：${money(estimatedCost)}</p>${table(data.models, [
+      { key: 'provider', label: '服務商', format: value => value || 'unknown' },
+      { key: 'model', label: 'Model', format: value => value || 'unknown' },
+      { key: 'events', label: '翻譯次數', format: number },
+      { key: 'unique_users', label: '匿名使用者', format: number },
+      { key: 'input_tokens', label: '估算輸入 tokens', format: number },
+      { key: 'output_tokens', label: '估算輸出 tokens', format: number },
+      { key: 'estimated_cost_usd', label: '估算成本 USD', format: money }
+    ])}</section>
     <section><h2>匿名使用者列表</h2><p class="note">這裡的 ID 只能幫你知道同一個匿名使用者大概用了幾次，不能知道他的姓名、email、網址、原文或譯文。</p>${table(data.users, [
       { key: 'anonymous_user_id', label: '匿名 user ID', format: value => value || 'unknown' },
       { key: 'translation_events', label: '翻譯次數', format: number },
       { key: 'successful_translations', label: '成功', format: number },
       { key: 'failed_translations', label: '失敗', format: number },
       { key: 'source_char_count', label: '輸入字數', format: number },
+      { key: 'latest_model', label: '最近 model', format: value => value || 'unknown' },
+      { key: 'latest_version', label: '最近版本', format: value => value || 'unknown' },
+      { key: 'first_seen', label: '第一次看到' },
+      { key: 'last_seen', label: '最近一次看到' }
+    ])}</section>
+    <section><h2>測試 user ID 列表</h2><p class="note">這一區只放我們本地測試、smoke test、手動測試視窗產生的 ID，不會混進上面的正式使用者統計。</p>${table(data.testUsers, [
+      { key: 'anonymous_user_id', label: '測試 user ID', format: value => value || 'unknown' },
+      { key: 'translation_events', label: '測試翻譯次數', format: number },
+      { key: 'provider', label: '服務商', format: value => value || 'unknown' },
+      { key: 'model', label: 'Model', format: value => value || 'unknown' },
       { key: 'latest_version', label: '最近版本', format: value => value || 'unknown' },
       { key: 'first_seen', label: '第一次看到' },
       { key: 'last_seen', label: '最近一次看到' }
