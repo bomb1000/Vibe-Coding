@@ -1,7 +1,7 @@
 console.log("EW_BACKGROUND_TOPLEVEL: background.js script started parsing.");
 const EW_USAGE_ID_KEY = 'ewAnonymousUsageId';
 const EW_USAGE_STATS_KEY = 'ewUsageStats';
-const EW_USAGE_REPORT_ENDPOINT = '';
+const EW_USAGE_REPORT_ENDPOINT = 'https://english-writing-helper-usage.michael-ewh.workers.dev/usage';
 const EW_WHATS_NEW_KEY = 'ewWhatsNewState';
 
 // 監聽來自 content_script 的訊息
@@ -319,7 +319,7 @@ async function sendRemoteUsageEvent(event) {
 
 async function recordUsageEvent({ sourceText, translatedText = '', status, provider, style, source }) {
   const settings = await storageSyncGet(['anonymousUsageEnabled']);
-  if (settings.anonymousUsageEnabled === false) return;
+  if (settings.anonymousUsageEnabled !== true) return;
 
   const event = {
     anonymousUserId: await getAnonymousUsageId(),

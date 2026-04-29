@@ -92,6 +92,7 @@ async function configureOptionalApiKey(worker) {
     openaiUserSelectedModel: 'gpt-5.4-mini',
     customPromptEnabled: true,
     customPrompt: 'Translate Traditional Chinese into clear, professional English. Only output the English translation.',
+    anonymousUsageEnabled: true,
   };
 
   await worker.evaluate(options => new Promise((resolve, reject) => {

@@ -31,6 +31,6 @@ English Writing Helper helps non-native English writers translate and polish tex
 
 *   **API Key Required:** This extension requires your own Google Gemini or OpenAI API key to function.
 *   **Potential API Costs:** Use of the selected AI API may incur costs based on your usage. Please refer to the provider's pricing for details.
-*   **Privacy-Friendly Usage Reporting:** Anonymous usage statistics can be enabled to help improve the product. The extension counts translation attempts and character totals, but does not send source text, translated text, API keys, page URLs, or browsing history.
+*   **Privacy-Friendly Usage Reporting:** Anonymous usage statistics are off by default and can be enabled to help improve the product. The extension counts translation attempts and character totals, but does not send source text, translated text, API keys, page URLs, or browsing history.
 *   **Current Limitations:** Works best with standard HTML input fields and textareas. Support for some rich-text editors may be limited.
 *   **Focus:** Designed for non-native English writers who want to translate and practice writing in English.

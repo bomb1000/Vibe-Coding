@@ -92,7 +92,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     customPromptEnabledInput.checked = result.customPromptEnabled === true;
     customPromptInput.value = result.customPrompt || DEFAULT_CUSTOM_PROMPT;
-    anonymousUsageEnabledInput.checked = result.anonymousUsageEnabled !== false;
+    anonymousUsageEnabledInput.checked = result.anonymousUsageEnabled === true;
     updateCustomPromptState();
     refreshWhatsNewNotice();
   });
