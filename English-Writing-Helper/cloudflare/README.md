@@ -5,6 +5,7 @@ Cloudflare resources:
 - Worker: `english-writing-helper-usage`
 - Public endpoint: `https://english-writing-helper-usage.michael-ewh.workers.dev/usage`
 - Health check: `https://english-writing-helper-usage.michael-ewh.workers.dev/health`
+- Owner dashboard: `https://english-writing-helper-usage.michael-ewh.workers.dev/dashboard`
 - D1 database: `english_writing_helper_usage`
 - D1 database ID: `e0dfbe3a-4f84-4158-9cc2-ba7c5d871ca4`
 
@@ -24,6 +25,7 @@ Stored fields:
 
 Useful dashboard checks:
 
-- Open Cloudflare Dashboard.
-- Go to Workers & Pages > `english-writing-helper-usage` for Worker status.
-- Go to D1 > `english_writing_helper_usage` for raw events and daily summaries.
+- Open the owner dashboard URL above after signing in once with the admin token.
+- The admin token is stored locally in macOS Keychain as `codex-ewh-dashboard-token`.
+- Open Cloudflare Dashboard > Workers & Pages > `english-writing-helper-usage` for Worker status.
+- Open Cloudflare Dashboard > D1 > `english_writing_helper_usage` for raw events and daily summaries.
