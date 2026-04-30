@@ -4,8 +4,17 @@ document.addEventListener('DOMContentLoaded', () => {
   const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash';
   const DEFAULT_OPENAI_MODEL = 'gpt-5.4-mini';
   const DEFAULT_CUSTOM_PROMPT = 'Please translate the text from its original language into natural English. Keep the meaning accurate, choose wording that fits the context, and only output the English translation without explanations.';
+  const MANAGED_BALANCE_ENDPOINT = 'https://english-writing-helper-usage.michael-ewh.workers.dev/managed/balance';
+  const MANAGED_CHECKOUT_ENDPOINT = 'https://english-writing-helper-usage.michael-ewh.workers.dev/checkout';
 
   const apiKeyInput = document.getElementById('apiKey');
+  const usageModeSelect = document.getElementById('usageMode');
+  const byokSettings = document.getElementById('byokSettings');
+  const managedSettings = document.getElementById('managedSettings');
+  const managedLicenseKeyInput = document.getElementById('managedLicenseKey');
+  const managedCreditBalanceSpan = document.getElementById('managedCreditBalance');
+  const refreshManagedBalanceButton = document.getElementById('refreshManagedBalance');
+  const managedBuyButtons = document.querySelectorAll('.managed-buy');
   const writingStyleSelect = document.getElementById('writingStyle');
   const currentGeminiModelSpan = document.getElementById('currentGeminiModel');
   const geminiModelSelect = document.getElementById('geminiModelSelect');
@@ -26,6 +35,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const whatsNewNotice = document.getElementById('whatsNewNotice');
   const whatsNewVersionLine = document.getElementById('whatsNewVersionLine');
   const dismissWhatsNewButton = document.getElementById('dismissWhatsNew');
+  const usageConsentNotice = document.getElementById('usageConsentNotice');
+  const acceptUsageConsentButton = document.getElementById('acceptUsageConsent');
+  const declineUsageConsentButton = document.getElementById('declineUsageConsent');
 
   let currentLanguage = 'en';
 
@@ -43,6 +55,13 @@ document.addEventListener('DOMContentLoaded', () => {
       if (chrome.runtime.lastError || !response?.shouldShow || !whatsNewNotice) return;
       whatsNewVersionLine.textContent = `${text('whatsNewVersion')} ${response.currentVersion}`;
       whatsNewNotice.hidden = false;
+    });
+  }
+
+  function refreshUsageConsentNotice() {
+    chrome.runtime.sendMessage({ type: 'GET_USAGE_CONSENT_STATE' }, response => {
+      if (chrome.runtime.lastError || !response?.shouldShow || !usageConsentNotice) return;
+      usageConsentNotice.hidden = false;
     });
   }
 
@@ -64,9 +83,45 @@ document.addEventListener('DOMContentLoaded', () => {
     customPromptInput.style.opacity = customPromptEnabledInput.checked ? '1' : '0.6';
   }
 
+  function updateUsageModeState() {
+    const mode = usageModeSelect.value || 'byok';
+    byokSettings.hidden = mode !== 'byok';
+    managedSettings.hidden = mode !== 'managed';
+  }
+
+  async function refreshManagedBalance() {
+    const licenseKey = managedLicenseKeyInput.value.trim();
+    if (!licenseKey) {
+      managedCreditBalanceSpan.textContent = '--';
+      return;
+    }
+    managedCreditBalanceSpan.textContent = text('managedBalanceLoading');
+    try {
+      const anonymousUserId = await new Promise(resolve => {
+        chrome.runtime.sendMessage({ type: 'GET_ANONYMOUS_USAGE_ID' }, response => {
+          resolve(response?.anonymousUserId || '');
+        });
+      });
+      const url = new URL(MANAGED_BALANCE_ENDPOINT);
+      url.searchParams.set('licenseKey', licenseKey);
+      if (anonymousUserId) url.searchParams.set('anonymousUserId', anonymousUserId);
+      const response = await fetch(url.toString());
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        managedCreditBalanceSpan.textContent = data.error || text('managedBalanceUnavailable');
+        return;
+      }
+      managedCreditBalanceSpan.textContent = `${Number(data.balanceCharacters || 0).toLocaleString('en-US')} ${text('managedCharactersUnit')}`;
+    } catch (error) {
+      managedCreditBalanceSpan.textContent = text('managedBalanceUnavailable');
+    }
+  }
+
   refreshLanguage();
 
-  chrome.storage.sync.get(['apiProvider', 'geminiApiKey', 'openaiApiKey', 'writingStyle', 'geminiUserSelectedModel', 'openaiUserSelectedModel', 'customPromptEnabled', 'customPrompt', 'anonymousUsageEnabled'], (result) => {
+  chrome.storage.sync.get(['usageMode', 'apiProvider', 'geminiApiKey', 'openaiApiKey', 'writingStyle', 'geminiUserSelectedModel', 'openaiUserSelectedModel', 'customPromptEnabled', 'customPrompt', 'anonymousUsageEnabled', 'managedLicenseKey'], (result) => {
+    usageModeSelect.value = result.usageMode || 'byok';
+    managedLicenseKeyInput.value = result.managedLicenseKey || '';
     if (result.apiProvider) {
       apiProviderSelect.value = result.apiProvider;
       geminiKeyGroup.style.display = result.apiProvider === 'gemini' ? 'block' : 'none';
@@ -94,8 +149,13 @@ document.addEventListener('DOMContentLoaded', () => {
     customPromptInput.value = result.customPrompt || DEFAULT_CUSTOM_PROMPT;
     anonymousUsageEnabledInput.checked = result.anonymousUsageEnabled === true;
     updateCustomPromptState();
+    updateUsageModeState();
     refreshWhatsNewNotice();
+    refreshUsageConsentNotice();
+    if (usageModeSelect.value === 'managed' && result.managedLicenseKey) refreshManagedBalance();
   });
+
+  usageModeSelect.addEventListener('change', updateUsageModeState);
 
   uiLanguageSelect.addEventListener('change', async () => {
     await EWI18n.setLanguage(uiLanguageSelect.value);
@@ -108,6 +168,16 @@ document.addEventListener('DOMContentLoaded', () => {
       if (whatsNewNotice) whatsNewNotice.hidden = true;
     });
   });
+
+  function setUsageConsent(enabled) {
+    chrome.runtime.sendMessage({ type: 'SET_USAGE_CONSENT', enabled }, () => {
+      anonymousUsageEnabledInput.checked = enabled;
+      if (usageConsentNotice) usageConsentNotice.hidden = true;
+    });
+  }
+
+  acceptUsageConsentButton.addEventListener('click', () => setUsageConsent(true));
+  declineUsageConsentButton.addEventListener('click', () => setUsageConsent(false));
 
   apiProviderSelect.addEventListener('change', () => {
     const provider = apiProviderSelect.value;
@@ -127,23 +197,47 @@ document.addEventListener('DOMContentLoaded', () => {
     chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
   });
 
+  refreshManagedBalanceButton.addEventListener('click', refreshManagedBalance);
+  managedBuyButtons.forEach(button => {
+    button.addEventListener('click', async () => {
+      const anonymousUserId = await new Promise(resolve => {
+        chrome.runtime.sendMessage({ type: 'GET_ANONYMOUS_USAGE_ID' }, response => {
+          resolve(response?.anonymousUserId || '');
+        });
+      });
+      const url = new URL(MANAGED_CHECKOUT_ENDPOINT);
+      url.searchParams.set('package', button.dataset.packageId || 'starter');
+      if (managedLicenseKeyInput.value.trim()) url.searchParams.set('licenseKey', managedLicenseKeyInput.value.trim());
+      if (anonymousUserId) url.searchParams.set('anonymousUserId', anonymousUserId);
+      if (anonymousUsageEnabledInput.checked) url.searchParams.set('analyticsBonus', '1');
+      chrome.tabs.create({ url: url.toString() });
+    });
+  });
+
   // 儲存設定
   saveButton.addEventListener('click', () => {
     const provider = apiProviderSelect.value;
+    const usageMode = usageModeSelect.value || 'byok';
     const apiKey = apiKeyInput.value.trim();
     const openaiKey = openaiApiKeyInput.value.trim();
+    const managedLicenseKey = managedLicenseKeyInput.value.trim();
     const style = writingStyleSelect.value;
     const customPromptEnabled = customPromptEnabledInput.checked;
     const customPrompt = customPromptInput.value.trim();
     const anonymousUsageEnabled = anonymousUsageEnabledInput.checked;
 
-    if (provider === 'gemini' && !apiKey) {
+    if (usageMode === 'byok' && provider === 'gemini' && !apiKey) {
       statusDiv.textContent = text('geminiKeyRequired');
       statusDiv.style.color = 'red';
       return;
     }
-    if (provider === 'openai' && !openaiKey) {
+    if (usageMode === 'byok' && provider === 'openai' && !openaiKey) {
       statusDiv.textContent = text('openaiKeyRequired');
+      statusDiv.style.color = 'red';
+      return;
+    }
+    if (usageMode === 'managed' && !managedLicenseKey) {
+      statusDiv.textContent = text('managedLicenseRequired');
       statusDiv.style.color = 'red';
       return;
     }
@@ -154,9 +248,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     chrome.storage.sync.set({
+      usageMode,
       apiProvider: provider,
       geminiApiKey: apiKey,
       openaiApiKey: openaiKey,
+      managedLicenseKey,
       writingStyle: style,
       geminiUserSelectedModel: geminiModelSelect.value,
       openaiUserSelectedModel: openaiModelSelect.value,
@@ -168,6 +264,7 @@ document.addEventListener('DOMContentLoaded', () => {
       currentGeminiModelSpan.textContent = geminiModelSelect.value;
       currentOpenAIModelSpan.textContent = openaiModelSelect.value;
       statusDiv.style.color = 'green';
+      if (usageMode === 'managed') refreshManagedBalance();
       setTimeout(() => { statusDiv.textContent = ''; }, 3000);
     });
   });

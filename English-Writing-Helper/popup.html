@@ -9,6 +9,10 @@
     .whats-new-notice { border: 1px solid #cab9e8; border-radius: 6px; background: #f4efff; color: #301934; padding: 9px; margin-bottom: 10px; line-height: 1.35; }
     .whats-new-notice p { margin: 6px 0; }
     .whats-new-notice button { border: 0; border-radius: 4px; background: #8a6bbd; color: #fff; cursor: pointer; padding: 6px 9px; }
+    .consent-notice { border: 1px solid #b8d8c0; border-radius: 6px; background: #f1fff4; color: #193b24; padding: 9px; margin-bottom: 10px; line-height: 1.35; }
+    .consent-notice p { margin: 6px 0; }
+    .consent-notice button { border: 0; border-radius: 4px; background: #4CAF50; color: #fff; cursor: pointer; padding: 6px 9px; margin-right: 4px; }
+    .consent-notice button.secondary { background: #666; }
   </style>
 </head>
 <body>
@@ -18,6 +22,12 @@
     <p id="whatsNewVersionLine"></p>
     <p data-i18n="whatsNewBody">New in this version: multilingual interface, Feedback / Wishlist, custom prompts with quick writing styles, and privacy-friendly anonymous usage statistics.</p>
     <button type="button" id="dismissWhatsNew" data-i18n="whatsNewDismiss">Got it</button>
+  </div>
+  <div id="usageConsentNotice" class="consent-notice" hidden>
+    <strong data-i18n="usageConsentTitle">Help improve English Writing Helper?</strong>
+    <p data-i18n="usageConsentBody">You can share anonymous usage counts to help improve quality and cost estimates. No source text, translation, API key, page URL, or browsing history is sent.</p>
+    <button type="button" id="acceptUsageConsent" data-i18n="usageConsentAccept">Share anonymous stats</button>
+    <button type="button" id="declineUsageConsent" class="secondary" data-i18n="usageConsentDecline">Not now</button>
   </div>
   <label>
     <input type="checkbox" id="enabledToggle"> <span data-i18n="enabledToggle">Enable extension</span>

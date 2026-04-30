@@ -15,7 +15,8 @@ English Writing Helper 是給非英語母語者使用的英文寫作助手。你
 - 語氣選擇：快速切換正式寫作或自然口語。
 - 自訂翻譯指令：用自己的 prompt 指定語氣、格式、受眾或特殊寫作規則。
 - Gemini/OpenAI 支援：可使用自己的 Google Gemini 或 OpenAI API Key。
-- 個人化設定：儲存 API Key、AI 服務商、模型、語氣與自訂 prompt。
+- 兩種使用模式：可使用自己的 API Key，也可選擇預付式 Managed Credits。
+- 個人化設定：儲存 AI 服務商、模型、語氣、自訂 prompt，以及 BYOK 模式使用的 API Key。
 - 多語介面：可跟隨 Chrome/系統語言，也可在設定頁手動切換。
 - 回饋 / 許願：可直接從插件送出問題回報、使用心得或功能願望。
 - 側邊視窗：翻譯結果會出現在方便閱讀的側邊視窗中，不打斷原本工作流程。
@@ -27,4 +28,8 @@ English Writing Helper 是給非英語母語者使用的英文寫作助手。你
 
 隱私說明
 
-你的 API Key 會儲存在 Chrome 擴充功能儲存空間中。插件不會自動把目前網址、瀏覽紀錄、API Key、原文或譯文傳送給開發者。選填的匿名用量統計只包含翻譯次數、字數、服務商、語氣、插件版本等彙總資料。
+你的 API Key 會儲存在 Chrome 擴充功能儲存空間中，並會在插件更新後保留。插件不會自動把目前網址、瀏覽紀錄、API Key、原文或譯文傳送給開發者。
+
+匿名用量統計會以清楚的首次提示詢問是否同意，只包含翻譯次數、字數、服務商、model、語氣、插件版本等彙總資料。開啟匿名統計時，Managed Credits 未來購買會獲得 5% 額外點數。
+
+Managed Credits 隱私說明：在 Managed Credits 模式中，選取文字會送到 English Writing Helper 後端與 AI 服務商，只用來完成翻譯與扣除預付點數。使用情況 Dashboard 不會儲存原文或譯文。

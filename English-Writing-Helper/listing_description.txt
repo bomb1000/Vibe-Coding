@@ -6,7 +6,7 @@ Translate and polish text into natural English with formal, casual, or custom wr
 
 **Main Description:**
 
-English Writing Helper helps non-native English writers translate and polish text into natural English across the web. Use your own Gemini or OpenAI API key, choose the tone that fits your context, and keep the helper available while writing emails, posts, messages, notes, and more.
+English Writing Helper helps non-native English writers translate and polish text into natural English across the web. Use your own Gemini or OpenAI API key, or use optional Managed Credits if you do not want to set up an API key. Choose the tone that fits your context and keep the helper available while writing emails, posts, messages, notes, and more.
 
 **Key Features:**
 
@@ -14,7 +14,8 @@ English Writing Helper helps non-native English writers translate and polish tex
 *   **Style Options:** Choose between Formal and Conversational English to suit your needs.
 *   **Custom Translation Instructions:** Advanced users can define their own translation prompt for specific tones, formats, or contexts.
 *   **Gemini/OpenAI Powered:** Use Google Gemini or OpenAI for high-quality writing suggestions.
-*   **Customizable:** Use your own Gemini or OpenAI API key and set a default writing style (Formal/Conversational).
+*   **Two Usage Modes:** Use your own Gemini/OpenAI API key, or use optional prepaid Managed Credits.
+*   **Customizable:** Save your provider, model, writing style, and custom prompt.
 *   **Localized Interface:** The interface can follow your Chrome/system language automatically, with manual language switching available in settings.
 *   **Feedback & Wishlist:** Send product feedback, bug reports, or feature wishes directly from the extension.
 *   **Flexible Display:** View suggestions in a convenient sidebar or directly below your input field.
@@ -29,8 +30,9 @@ English Writing Helper helps non-native English writers translate and polish tex
 
 **Important Notes:**
 
-*   **API Key Required:** This extension requires your own Google Gemini or OpenAI API key to function.
-*   **Potential API Costs:** Use of the selected AI API may incur costs based on your usage. Please refer to the provider's pricing for details.
-*   **Privacy-Friendly Usage Reporting:** Anonymous usage statistics are off by default and can be enabled to help improve the product. The extension counts translation attempts and character totals, but does not send source text, translated text, API keys, page URLs, or browsing history.
+*   **API Key or Managed Credits:** You can use your own Gemini/OpenAI API key, or use optional prepaid Managed Credits when available.
+*   **Potential Costs:** Your own API key may incur provider charges. Managed Credits are prepaid and usage-based.
+*   **Managed Credits Privacy:** In Managed Credits mode, selected text is sent to the English Writing Helper backend and AI provider only to complete translation and deduct credits. Source text and translations are not stored in the usage dashboard.
+*   **Privacy-Friendly Usage Reporting:** Anonymous usage statistics are requested with a clear first-run choice. The extension counts translation attempts, character totals, provider, model, writing style, and version, but does not send source text, translated text, API keys, page URLs, or browsing history. Managed Credits purchases receive 5% bonus credits while anonymous statistics are enabled.
 *   **Current Limitations:** Works best with standard HTML input fields and textareas. Support for some rich-text editors may be limited.
 *   **Focus:** Designed for non-native English writers who want to translate and practice writing in English.

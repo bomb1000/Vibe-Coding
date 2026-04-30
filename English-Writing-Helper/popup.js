@@ -7,6 +7,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const whatsNewNotice = document.getElementById('whatsNewNotice');
   const whatsNewVersionLine = document.getElementById('whatsNewVersionLine');
   const dismissWhatsNewButton = document.getElementById('dismissWhatsNew');
+  const usageConsentNotice = document.getElementById('usageConsentNotice');
+  const acceptUsageConsentButton = document.getElementById('acceptUsageConsent');
+  const declineUsageConsentButton = document.getElementById('declineUsageConsent');
 
   async function refreshWhatsNewNotice() {
     const language = await EWI18n.getStoredLanguage();
@@ -17,11 +20,27 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  function refreshUsageConsentNotice() {
+    chrome.runtime.sendMessage({ type: 'GET_USAGE_CONSENT_STATE' }, response => {
+      if (chrome.runtime.lastError || !response?.shouldShow || !usageConsentNotice) return;
+      usageConsentNotice.hidden = false;
+    });
+  }
+
   dismissWhatsNewButton.addEventListener('click', () => {
     chrome.runtime.sendMessage({ type: 'MARK_WHATS_NEW_SEEN' }, () => {
       if (whatsNewNotice) whatsNewNotice.hidden = true;
     });
   });
+
+  function setUsageConsent(enabled) {
+    chrome.runtime.sendMessage({ type: 'SET_USAGE_CONSENT', enabled }, () => {
+      if (usageConsentNotice) usageConsentNotice.hidden = true;
+    });
+  }
+
+  acceptUsageConsentButton.addEventListener('click', () => setUsageConsent(true));
+  declineUsageConsentButton.addEventListener('click', () => setUsageConsent(false));
 
   // 載入儲存的狀態
   chrome.storage.sync.get(['isEnabled'], (result) => {
@@ -50,4 +69,5 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   refreshWhatsNewNotice();
+  refreshUsageConsentNotice();
 });

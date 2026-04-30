@@ -2,7 +2,9 @@ console.log("EW_BACKGROUND_TOPLEVEL: background.js script started parsing.");
 const EW_USAGE_ID_KEY = 'ewAnonymousUsageId';
 const EW_USAGE_STATS_KEY = 'ewUsageStats';
 const EW_USAGE_REPORT_ENDPOINT = 'https://english-writing-helper-usage.michael-ewh.workers.dev/usage';
+const EW_MANAGED_TRANSLATE_ENDPOINT = 'https://english-writing-helper-usage.michael-ewh.workers.dev/managed/translate';
 const EW_WHATS_NEW_KEY = 'ewWhatsNewState';
+const EW_USAGE_CONSENT_KEY = 'ewUsageConsentState';
 
 // 監聽來自 content_script 的訊息
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -66,6 +68,27 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         sendResponse({ ok: false, error: error.message });
       });
     return true;
+  } else if (request.type === 'GET_USAGE_CONSENT_STATE') {
+    getUsageConsentState()
+      .then(sendResponse)
+      .catch(error => {
+        console.error('Usage consent state error:', error);
+        sendResponse({ shouldShow: false, error: error.message });
+      });
+    return true;
+  } else if (request.type === 'SET_USAGE_CONSENT') {
+    setUsageConsent(request.enabled === true)
+      .then(sendResponse)
+      .catch(error => {
+        console.error('Usage consent save error:', error);
+        sendResponse({ ok: false, error: error.message });
+      });
+    return true;
+  } else if (request.type === 'GET_ANONYMOUS_USAGE_ID') {
+    getAnonymousUsageId()
+      .then(anonymousUserId => sendResponse({ anonymousUserId }))
+      .catch(error => sendResponse({ anonymousUserId: '', error: error.message }));
+    return true;
   }
 });
 
@@ -86,7 +109,11 @@ async function handleTranslationRequest(text, style) {
     return { translatedText: '' };
   }
 
-  const settings = await chrome.storage.sync.get(['apiProvider', 'geminiApiKey', 'openaiApiKey', 'writingStyle', 'geminiUserSelectedModel', 'openaiUserSelectedModel', 'customPromptEnabled', 'customPrompt']);
+  const settings = await chrome.storage.sync.get(['usageMode', 'apiProvider', 'geminiApiKey', 'openaiApiKey', 'managedLicenseKey', 'writingStyle', 'geminiUserSelectedModel', 'openaiUserSelectedModel', 'customPromptEnabled', 'customPrompt']);
+  if ((settings.usageMode || 'byok') === 'managed') {
+    return handleManagedTranslationRequest(text, style, settings);
+  }
+
   const apiProvider = settings.apiProvider || 'gemini';
   const currentStyle = style || settings.writingStyle || 'formal';
   const customInstruction = settings.customPromptEnabled && settings.customPrompt ? settings.customPrompt.trim() : '';
@@ -171,6 +198,50 @@ async function handleTranslationRequest(text, style) {
   }
 }
 
+async function handleManagedTranslationRequest(text, style, settings) {
+  const managedLicenseKey = String(settings.managedLicenseKey || '').trim();
+  if (!managedLicenseKey) {
+    throw new Error('Managed Credits license key not configured. Please add it in the extension options.');
+  }
+
+  const currentStyle = style || settings.writingStyle || 'formal';
+  const customInstruction = settings.customPromptEnabled && settings.customPrompt ? settings.customPrompt.trim() : '';
+  const localFlags = await storageLocalGet(['ewUsageIsTestProfile']);
+  const response = await fetch(EW_MANAGED_TRANSLATE_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      licenseKey: managedLicenseKey,
+      anonymousUserId: await getAnonymousUsageId(),
+      text,
+      style: currentStyle,
+      customInstruction,
+      extensionVersion: chrome.runtime.getManifest().version,
+      analyticsEnabled: (await storageSyncGet(['anonymousUsageEnabled'])).anonymousUsageEnabled === true,
+      isTest: localFlags.ewUsageIsTestProfile === true
+    })
+  });
+
+  let data = {};
+  try {
+    data = await response.json();
+  } catch (error) {
+    data = { error: 'Managed Credits service returned an invalid response.' };
+  }
+  if (!response.ok || !data.ok) {
+    throw new Error(data.error || 'Managed Credits translation failed.');
+  }
+  return {
+    translatedText: cleanTranslationText(data.translatedText || ''),
+    managedCredits: {
+      balanceCharacters: data.balanceCharacters,
+      chargedCharacters: data.chargedCharacters,
+      model: data.model,
+      provider: data.provider
+    }
+  };
+}
+
 function buildSystemInstruction(style, customInstruction = '') {
   const outputRule = 'Only output the final English translation itself. Do not add any prefix, title, label, explanation, quotation wrapper, or phrase like "Here is the translation".';
   if (customInstruction) {
@@ -238,6 +309,40 @@ async function markWhatsNewSeen(version) {
     }
   });
   return { ok: true };
+}
+
+async function getUsageConsentState() {
+  const [syncSettings, localState] = await Promise.all([
+    storageSyncGet(['anonymousUsageEnabled']),
+    storageLocalGet([EW_USAGE_CONSENT_KEY])
+  ]);
+  const state = localState[EW_USAGE_CONSENT_KEY] || {};
+  const hasChoice = typeof state.choice === 'boolean' || typeof syncSettings.anonymousUsageEnabled === 'boolean';
+  return {
+    shouldShow: !hasChoice,
+    enabled: syncSettings.anonymousUsageEnabled === true,
+    choice: typeof state.choice === 'boolean' ? state.choice : null,
+    decidedAt: state.decidedAt || ''
+  };
+}
+
+async function setUsageConsent(enabled) {
+  await Promise.all([
+    new Promise((resolve, reject) => {
+      chrome.storage.sync.set({ anonymousUsageEnabled: enabled }, () => {
+        if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+        else resolve();
+      });
+    }),
+    storageLocalSet({
+      [EW_USAGE_CONSENT_KEY]: {
+        choice: enabled,
+        decidedAt: new Date().toISOString(),
+        version: chrome.runtime.getManifest().version
+      }
+    })
+  ]);
+  return { ok: true, enabled };
 }
 
 function storageSyncGet(keys) {
@@ -344,9 +449,10 @@ async function recordUsageEvent({ sourceText, translatedText = '', status, provi
 }
 
 async function translateAndTrack(text, style, source) {
-  const settings = await storageSyncGet(['apiProvider', 'writingStyle', 'geminiUserSelectedModel', 'openaiUserSelectedModel']);
-  const provider = settings.apiProvider || 'gemini';
-  const model = provider === 'openai'
+  const settings = await storageSyncGet(['usageMode', 'apiProvider', 'writingStyle', 'geminiUserSelectedModel', 'openaiUserSelectedModel']);
+  const usageMode = settings.usageMode || 'byok';
+  const provider = usageMode === 'managed' ? 'managed' : (settings.apiProvider || 'gemini');
+  const model = provider === 'managed' ? 'gemini-2.5-flash-lite' : provider === 'openai'
     ? settings.openaiUserSelectedModel || 'gpt-5.4-mini'
     : settings.geminiUserSelectedModel || 'gemini-2.5-flash';
   const currentStyle = style || settings.writingStyle || 'formal';
@@ -357,7 +463,7 @@ async function translateAndTrack(text, style, source) {
       translatedText: result.translatedText || '',
       status: 'success',
       provider,
-      model,
+      model: result.managedCredits?.model || model,
       style: currentStyle,
       source
     });

@@ -1,8 +1,8 @@
 const JSON_HEADERS = {
   'Content-Type': 'application/json; charset=utf-8',
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, X-EWH-Webhook-Secret, X-Signature',
   'Cache-Control': 'no-store'
 };
 
@@ -17,7 +17,14 @@ const HTML_HEADERS = {
 const ALLOWED_EVENTS = new Set(['translation_completed']);
 const ALLOWED_STATUSES = new Set(['success', 'failed']);
 const MAX_BODY_BYTES = 4096;
+const MAX_TRANSLATE_BODY_BYTES = 16000;
 const CHARS_PER_TOKEN_ESTIMATE = 4;
+const MANAGED_PACKAGES = {
+  starter: { priceUsd: 4.99, characters: 100000 },
+  plus: { priceUsd: 9.99, characters: 250000 },
+  pro: { priceUsd: 24.99, characters: 750000 },
+};
+const ANALYTICS_BONUS_RATE = 0.05;
 const MODEL_PRICES = {
   openai: {
     'gpt-5.4': { input: 2.5, output: 15 },
@@ -31,6 +38,9 @@ const MODEL_PRICES = {
     'gemini-2.5-flash-lite': { input: 0.1, output: 0.4 },
   },
 };
+
+const DEFAULT_MANAGED_PROVIDER = 'gemini';
+const DEFAULT_MANAGED_MODEL = 'gemini-2.5-flash-lite';
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: JSON_HEADERS });
@@ -49,6 +59,10 @@ function cleanCount(value) {
   const number = Number(value);
   if (!Number.isFinite(number) || number < 0) return 0;
   return Math.min(Math.floor(number), 500000);
+}
+
+function cleanLicense(value) {
+  return String(value || '').trim().slice(0, 120);
 }
 
 function escapeHtml(value) {
@@ -93,6 +107,25 @@ function money(value) {
   return `$${amount.toFixed(4)}`;
 }
 
+function buildManagedPrompt(sourceText, style, customInstruction = '') {
+  const outputRule = 'Only output the final English translation itself. Do not add any prefix, title, label, explanation, quotation wrapper, or phrase like "Here is the translation".';
+  if (customInstruction) {
+    return `${customInstruction}\n\n${outputRule}\n\nSource text: "${sourceText}"\n\nEnglish:`;
+  }
+  const styleDescription = style === 'casual'
+    ? 'Please translate the following text from its original language into casual, spoken English, like how a native speaker would chat with a friend.'
+    : 'Please translate the following text from its original language into formal, written English suitable for academic or professional contexts.';
+  return `${styleDescription}\n\n${outputRule}\n\nSource text: "${sourceText}"\n\nEnglish:`;
+}
+
+function cleanTranslationText(text) {
+  return String(text || '')
+    .trim()
+    .replace(/^["'“”‘’\s]+|["'“”‘’\s]+$/g, '')
+    .replace(/^(?:here(?:'s| is)\s+(?:the\s+)?(?:formal\s+written\s+|casual\s+|english\s+)?translation(?:\s+in\s+english)?|the\s+(?:formal\s+written\s+|casual\s+|english\s+)?translation\s+is|english(?:\s+translation)?|translation)\s*[:：\-–—]\s*/i, '')
+    .trim();
+}
+
 function getCookie(request, name) {
   const cookie = request.headers.get('Cookie') || '';
   const prefix = `${name}=`;
@@ -106,6 +139,45 @@ function hasDashboardAccess(request, env) {
   const url = new URL(request.url);
   const provided = url.searchParams.get('token') || getCookie(request, 'ewh_dashboard_token');
   return provided === expected;
+}
+
+function makeLicenseKey() {
+  const bytes = new Uint8Array(12);
+  crypto.getRandomValues(bytes);
+  return `EWHC-${Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('').toUpperCase().match(/.{1,4}/g).join('-')}`;
+}
+
+function bytesToHex(bytes) {
+  return Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function timingSafeEqual(a, b) {
+  const left = String(a || '');
+  const right = String(b || '');
+  if (left.length !== right.length) return false;
+  let mismatch = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    mismatch |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  }
+  return mismatch === 0;
+}
+
+async function hmacSha256Hex(secret, payload) {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(payload));
+  return bytesToHex(signature);
+}
+
+function getLemonVariantId(env, packageId) {
+  const key = `LEMON_VARIANT_${String(packageId || '').toUpperCase()}`;
+  return String(env[key] || '').trim();
 }
 
 function normalizeEvent(input) {
@@ -178,6 +250,260 @@ async function storeUsage(env, event) {
   ].join(' ')).bind(event.dateBucket, event.dateBucket).run();
 }
 
+async function getManagedAccount(env, licenseKey) {
+  return env.DB.prepare(
+    'SELECT license_key, anonymous_user_id, status, analytics_bonus_enabled FROM managed_accounts WHERE license_key = ?'
+  ).bind(licenseKey).first();
+}
+
+async function getManagedBalance(env, licenseKey) {
+  const credits = await env.DB.prepare(
+    'SELECT COALESCE(SUM(delta_characters), 0) AS credits FROM credit_ledger WHERE license_key = ?'
+  ).bind(licenseKey).first();
+  const usage = await env.DB.prepare(
+    'SELECT COALESCE(SUM(credits_charged), 0) AS charged FROM managed_translation_usage WHERE license_key = ? AND status = ?'
+  ).bind(licenseKey, 'success').first();
+  return Math.max(0, Number(credits?.credits || 0) - Number(usage?.charged || 0));
+}
+
+async function upsertManagedAccount(env, { licenseKey, anonymousUserId = '', analyticsBonusEnabled = false }) {
+  await env.DB.prepare([
+    'INSERT INTO managed_accounts (license_key, anonymous_user_id, status, analytics_bonus_enabled, updated_at)',
+    "VALUES (?, ?, 'active', ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
+    'ON CONFLICT(license_key) DO UPDATE SET',
+    'anonymous_user_id = COALESCE(NULLIF(excluded.anonymous_user_id, \'\'), managed_accounts.anonymous_user_id),',
+    'status = \'active\',',
+    'analytics_bonus_enabled = excluded.analytics_bonus_enabled,',
+    "updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')"
+  ].join(' ')).bind(licenseKey, anonymousUserId, analyticsBonusEnabled ? 1 : 0).run();
+}
+
+async function addManagedCredits(env, { licenseKey, anonymousUserId, packageId, orderId, analyticsBonusEligible }) {
+  const pack = MANAGED_PACKAGES[packageId];
+  if (!pack) return { error: 'invalid package id' };
+  const baseCharacters = pack.characters;
+  const bonusCharacters = analyticsBonusEligible ? Math.floor(baseCharacters * ANALYTICS_BONUS_RATE) : 0;
+  const totalCharacters = baseCharacters + bonusCharacters;
+  await upsertManagedAccount(env, { licenseKey, anonymousUserId, analyticsBonusEnabled: analyticsBonusEligible });
+  await env.DB.prepare(
+    'INSERT OR IGNORE INTO credit_ledger (license_key, order_id, delta_characters, reason, analytics_bonus_applied) VALUES (?, ?, ?, ?, ?)'
+  ).bind(licenseKey, orderId || null, totalCharacters, `purchase:${packageId}`, analyticsBonusEligible ? 1 : 0).run();
+  return {
+    ok: true,
+    licenseKey,
+    packageId,
+    baseCharacters,
+    bonusCharacters,
+    totalCharacters,
+    balanceCharacters: await getManagedBalance(env, licenseKey)
+  };
+}
+
+async function storeManagedTranslationUsage(env, event) {
+  await env.DB.prepare([
+    'INSERT INTO managed_translation_usage',
+    '(license_key, anonymous_user_id, status, source_char_count, output_char_count, provider, model, credits_charged, estimated_cost_usd, extension_version, date_bucket, is_test)',
+    'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ].join(' ')).bind(
+    event.licenseKey,
+    event.anonymousUserId,
+    event.status,
+    event.sourceCharCount,
+    event.outputCharCount,
+    event.provider,
+    event.model,
+    event.creditsCharged,
+    event.estimatedCostUsd,
+    event.extensionVersion,
+    event.dateBucket,
+    event.isTest ? 1 : 0
+  ).run();
+}
+
+async function callManagedGemini(env, { text, style, customInstruction, model }) {
+  const apiKey = String(env.MANAGED_GEMINI_API_KEY || env.GEMINI_API_KEY || '').trim();
+  if (!apiKey) return { error: 'managed AI service is not configured' };
+  const prompt = buildManagedPrompt(text, style, customInstruction);
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    return { error: data?.error?.message || 'managed AI request failed' };
+  }
+  const translatedText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!translatedText) return { error: 'managed AI response did not include a translation' };
+  return { translatedText: cleanTranslationText(translatedText) };
+}
+
+async function handleManagedBalance(request, env) {
+  const url = new URL(request.url);
+  const licenseKey = cleanLicense(url.searchParams.get('licenseKey'));
+  if (!licenseKey) return json({ ok: false, error: 'license key required' }, 400);
+  const account = await getManagedAccount(env, licenseKey);
+  if (!account || account.status !== 'active') return json({ ok: false, error: 'license not active' }, 404);
+  return json({
+    ok: true,
+    status: account.status,
+    analyticsBonusEnabled: account.analytics_bonus_enabled === 1,
+    balanceCharacters: await getManagedBalance(env, licenseKey)
+  });
+}
+
+async function handleManagedTranslate(request, env) {
+  if (Number(request.headers.get('content-length') || 0) > MAX_TRANSLATE_BODY_BYTES) {
+    return json({ ok: false, error: 'payload too large' }, 413);
+  }
+  const payload = await request.json().catch(() => null);
+  if (!payload) return json({ ok: false, error: 'invalid json' }, 400);
+  const licenseKey = cleanLicense(payload.licenseKey);
+  const text = String(payload.text || '').trim();
+  const anonymousUserId = cleanText(payload.anonymousUserId, '', 80);
+  const style = cleanText(payload.style, 'formal', 40);
+  const customInstruction = cleanText(payload.customInstruction, '', 1500);
+  const extensionVersion = cleanText(payload.extensionVersion, 'unknown', 30);
+  const isTest = payload.isTest === true || payload.isTest === 1;
+  const provider = cleanText(env.MANAGED_AI_PROVIDER, DEFAULT_MANAGED_PROVIDER, 40);
+  const model = cleanText(env.MANAGED_GEMINI_MODEL, DEFAULT_MANAGED_MODEL, 80);
+  const sourceCharCount = cleanCount(text);
+  const dateBucket = new Date().toISOString().slice(0, 10);
+
+  if (!licenseKey) return json({ ok: false, error: 'license key required' }, 400);
+  if (!text) return json({ ok: false, error: 'text required' }, 400);
+  if (anonymousUserId && !anonymousUserId.startsWith('EWH-')) return json({ ok: false, error: 'invalid anonymous user id' }, 400);
+
+  const account = await getManagedAccount(env, licenseKey);
+  if (!account || account.status !== 'active') return json({ ok: false, error: 'license not active' }, 402);
+  const balanceBefore = await getManagedBalance(env, licenseKey);
+  if (balanceBefore < sourceCharCount) return json({ ok: false, error: 'not enough managed credits', balanceCharacters: balanceBefore }, 402);
+
+  const aiResult = provider === 'gemini'
+    ? await callManagedGemini(env, { text, style, customInstruction, model })
+    : { error: 'managed provider not supported yet' };
+  const outputCharCount = aiResult.translatedText ? cleanCount(aiResult.translatedText) : 0;
+  const status = aiResult.error ? 'failed' : 'success';
+  const creditsCharged = status === 'success' ? sourceCharCount : 0;
+  const estimatedCostUsd = estimateUsd(provider, model, sourceCharCount, outputCharCount);
+
+  await storeManagedTranslationUsage(env, {
+    licenseKey,
+    anonymousUserId,
+    status,
+    sourceCharCount,
+    outputCharCount,
+    provider,
+    model,
+    creditsCharged,
+    estimatedCostUsd,
+    extensionVersion,
+    dateBucket,
+    isTest
+  });
+
+  if (aiResult.error) return json({ ok: false, error: aiResult.error, balanceCharacters: balanceBefore }, 502);
+  return json({
+    ok: true,
+    translatedText: aiResult.translatedText,
+    provider,
+    model,
+    chargedCharacters: creditsCharged,
+    balanceCharacters: await getManagedBalance(env, licenseKey)
+  });
+}
+
+async function handlePaymentWebhook(request, env) {
+  const signingSecret = String(env.LEMON_WEBHOOK_SECRET || env.PAYMENT_WEBHOOK_SECRET || '').trim();
+  const signature = request.headers.get('X-Signature') || '';
+  if (!signingSecret || !signature) {
+    return json({ ok: false, error: 'unauthorized' }, 401);
+  }
+  if (Number(request.headers.get('content-length') || 0) > MAX_BODY_BYTES) {
+    return json({ ok: false, error: 'payload too large' }, 413);
+  }
+  const rawBody = await request.text();
+  const expectedSignature = await hmacSha256Hex(signingSecret, rawBody);
+  if (!timingSafeEqual(signature, expectedSignature)) {
+    return json({ ok: false, error: 'invalid signature' }, 401);
+  }
+  let payload;
+  try {
+    payload = JSON.parse(rawBody || 'null');
+  } catch (error) {
+    return json({ ok: false, error: 'invalid json' }, 400);
+  }
+  if (!payload) return json({ ok: false, error: 'invalid json' }, 400);
+  const eventName = cleanText(payload?.meta?.event_name, '', 80);
+  if (eventName && eventName !== 'order_created') return json({ ok: true, ignored: eventName });
+  const custom = payload?.meta?.custom_data || {};
+  const licenseKey = cleanLicense(custom.license_key || payload.licenseKey);
+  const packageId = cleanText(custom.package_id || payload.packageId, '', 40);
+  const orderId = cleanText(payload?.data?.id || payload.orderId, '', 120);
+  const anonymousUserId = cleanText(custom.anonymous_user_id || payload.anonymousUserId, '', 80);
+  const analyticsBonusEligible = custom.analytics_bonus === true || custom.analytics_bonus === '1' || payload.analyticsBonusEligible === true;
+  if (!licenseKey) return json({ ok: false, error: 'license key required' }, 400);
+  if (anonymousUserId && !anonymousUserId.startsWith('EWH-')) return json({ ok: false, error: 'invalid anonymous user id' }, 400);
+  const result = await addManagedCredits(env, { licenseKey, anonymousUserId, packageId, orderId, analyticsBonusEligible });
+  if (result.error) return json({ ok: false, error: result.error }, 400);
+  return json(result);
+}
+
+async function handleCheckout(request, env) {
+  const url = new URL(request.url);
+  const packageId = cleanText(url.searchParams.get('package'), 'starter', 40);
+  const pack = MANAGED_PACKAGES[packageId] || MANAGED_PACKAGES.starter;
+  const licenseKey = cleanLicense(url.searchParams.get('licenseKey')) || makeLicenseKey();
+  const anonymousUserId = cleanText(url.searchParams.get('anonymousUserId'), '', 80);
+  const analyticsBonus = url.searchParams.get('analyticsBonus') === '1';
+  const apiKey = String(env.LEMON_API_KEY || '').trim();
+  const storeId = String(env.LEMON_STORE_ID || '').trim();
+  const variantId = getLemonVariantId(env, packageId);
+  if (apiKey && storeId && variantId) {
+    const redirectUrl = String(env.MANAGED_SUCCESS_URL || '').trim();
+    const response = await fetch('https://api.lemonsqueezy.com/v1/checkouts', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/vnd.api+json',
+        'Content-Type': 'application/vnd.api+json',
+        Authorization: `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        data: {
+          type: 'checkouts',
+          attributes: {
+            product_options: {
+              enabled_variants: [Number(variantId)],
+              ...(redirectUrl ? { redirect_url: redirectUrl } : {})
+            },
+            checkout_data: {
+              custom: {
+                license_key: licenseKey,
+                package_id: packageId,
+                anonymous_user_id: anonymousUserId,
+                analytics_bonus: analyticsBonus ? '1' : '0'
+              }
+            },
+            test_mode: String(env.LEMON_TEST_MODE || '').toLowerCase() === 'true'
+          },
+          relationships: {
+            store: { data: { type: 'stores', id: storeId } },
+            variant: { data: { type: 'variants', id: variantId } }
+          }
+        }
+      })
+    });
+    const data = await response.json().catch(() => ({}));
+    const checkoutUrl = data?.data?.attributes?.url;
+    if (!response.ok || !checkoutUrl) {
+      return json({ ok: false, error: data?.errors?.[0]?.detail || 'could not create checkout' }, 502);
+    }
+    return new Response(null, { status: 302, headers: { Location: checkoutUrl, 'Cache-Control': 'no-store' } });
+  }
+  const bonusText = analyticsBonus ? ` With the 5% anonymous statistics bonus, this purchase would add ${number(Math.floor(pack.characters * (1 + ANALYTICS_BONUS_RATE)))} characters.` : '';
+  return html(`<!doctype html><meta charset="utf-8"><title>Managed Credits checkout</title><body style="font-family:system-ui;padding:32px;line-height:1.5;max-width:720px"><h1>Managed Credits checkout is not connected yet</h1><p>This package is US$${pack.priceUsd} for ${number(pack.characters)} characters.${bonusText}</p><p>Your generated license key is:</p><pre style="padding:12px;background:#f4f4f4;border-radius:8px">${escapeHtml(licenseKey)}</pre><p>Before real purchases can run, configure <code>LEMON_API_KEY</code>, <code>LEMON_STORE_ID</code>, <code>LEMON_VARIANT_STARTER</code>, <code>LEMON_VARIANT_PLUS</code>, <code>LEMON_VARIANT_PRO</code>, and <code>LEMON_WEBHOOK_SECRET</code>.</p></body>`, 503);
+}
+
 async function getDashboardData(env) {
   const totals = await env.DB.prepare([
     'SELECT COUNT(*) AS total_events,',
@@ -245,9 +571,40 @@ async function getDashboardData(env) {
     'ORDER BY last_seen DESC LIMIT 50'
   ].join(' ')).all();
 
+  const managedTotals = await env.DB.prepare([
+    'SELECT COUNT(*) AS total_events,',
+    "SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS successful_translations,",
+    'SUM(source_char_count) AS source_char_count,',
+    'SUM(output_char_count) AS output_char_count,',
+    'SUM(credits_charged) AS credits_charged,',
+    'SUM(estimated_cost_usd) AS estimated_cost_usd,',
+    'COUNT(DISTINCT license_key) AS active_licenses',
+    'FROM managed_translation_usage WHERE is_test = 0'
+  ].join(' ')).first();
+
+  const managedCredits = await env.DB.prepare([
+    'SELECT COUNT(DISTINCT license_key) AS licenses,',
+    'SUM(delta_characters) AS credits_purchased,',
+    'SUM(CASE WHEN analytics_bonus_applied = 1 THEN delta_characters ELSE 0 END) AS bonus_related_credits',
+    'FROM credit_ledger'
+  ].join(' ')).first();
+
+  const managedLicenses = await env.DB.prepare([
+    'SELECT a.license_key, a.status, a.analytics_bonus_enabled,',
+    'COALESCE(SUM(l.delta_characters), 0) AS credits_purchased,',
+    'COALESCE((SELECT SUM(u.credits_charged) FROM managed_translation_usage u WHERE u.license_key = a.license_key AND u.status = \'success\'), 0) AS credits_used,',
+    'MAX(a.updated_at) AS updated_at',
+    'FROM managed_accounts a',
+    'LEFT JOIN credit_ledger l ON l.license_key = a.license_key',
+    'GROUP BY a.license_key',
+    'ORDER BY updated_at DESC LIMIT 50'
+  ].join(' ')).all();
+
   return {
     totals: totals || {},
     testTotals: testTotals || {},
+    managedTotals: managedTotals || {},
+    managedCredits: managedCredits || {},
     daily: daily.results || [],
     versions: versions.results || [],
     providers: providers.results || [],
@@ -259,6 +616,7 @@ async function getDashboardData(env) {
     }),
     users: users.results || [],
     testUsers: testUsers.results || [],
+    managedLicenses: managedLicenses.results || [],
     generatedAt: new Date().toISOString()
   };
 }
@@ -280,6 +638,13 @@ function renderDashboard(data) {
   const avgOutput = totals.total_events ? Math.round(Number(totals.output_char_count || 0) / Number(totals.total_events || 1)) : 0;
   const dailyRows = data.daily.map(row => ({ ...row, success_rate: percent(row.successful_translations, row.total_events) }));
   const estimatedCost = data.models.reduce((sum, row) => sum + Number(row.estimated_cost_usd || 0), 0);
+  const managedTotals = data.managedTotals || {};
+  const managedCredits = data.managedCredits || {};
+  const managedLicenses = (data.managedLicenses || []).map(row => ({
+    ...row,
+    balance: Number(row.credits_purchased || 0) - Number(row.credits_used || 0),
+    analytics_bonus_enabled_text: row.analytics_bonus_enabled === 1 ? 'yes' : 'no'
+  }));
 
   return `<!doctype html>
 <html lang="zh-Hant">
@@ -337,6 +702,15 @@ function renderDashboard(data) {
       { key: 'output_tokens', label: '估算輸出 tokens', format: number },
       { key: 'estimated_cost_usd', label: '估算成本 USD', format: money }
     ])}</section>
+    <section><h2>Managed Credits</h2><p class="note">這一區是付費點數模式的營運資料。正式統計不顯示原文、譯文或 API key。Managed 翻譯次數：${number(managedTotals.total_events)}，成功：${number(managedTotals.successful_translations)}，已扣點數：${number(managedTotals.credits_charged)}，估算 AI 成本：${money(managedTotals.estimated_cost_usd)}，已售點數：${number(managedCredits.credits_purchased)}。</p>${table(managedLicenses, [
+      { key: 'license_key', label: 'License key', format: value => value ? `${String(value).slice(0, 10)}...` : 'unknown' },
+      { key: 'status', label: '狀態', format: value => value || 'unknown' },
+      { key: 'analytics_bonus_enabled_text', label: '5% 獎勵' },
+      { key: 'credits_purchased', label: '已購點數', format: number },
+      { key: 'credits_used', label: '已用點數', format: number },
+      { key: 'balance', label: '剩餘點數', format: number },
+      { key: 'updated_at', label: '最近更新' }
+    ])}</section>
     <section><h2>匿名使用者列表</h2><p class="note">這裡的 ID 只能幫你知道同一個匿名使用者大概用了幾次，不能知道他的姓名、email、網址、原文或譯文。</p>${table(data.users, [
       { key: 'anonymous_user_id', label: '匿名 user ID', format: value => value || 'unknown' },
       { key: 'translation_events', label: '翻譯次數', format: number },
@@ -392,6 +766,22 @@ export default {
     if (request.method === 'GET' && url.pathname === '/api/dashboard') {
       if (!hasDashboardAccess(request, env)) return json({ ok: false, error: 'unauthorized' }, 401);
       return json({ ok: true, data: await getDashboardData(env) });
+    }
+
+    if (request.method === 'GET' && url.pathname === '/checkout') {
+      return handleCheckout(request, env);
+    }
+
+    if (request.method === 'GET' && url.pathname === '/managed/balance') {
+      return handleManagedBalance(request, env);
+    }
+
+    if (request.method === 'POST' && url.pathname === '/managed/translate') {
+      return handleManagedTranslate(request, env);
+    }
+
+    if (request.method === 'POST' && url.pathname === '/webhooks/payment') {
+      return handlePaymentWebhook(request, env);
     }
 
     if (request.method !== 'POST' || url.pathname !== '/usage') return json({ ok: false, error: 'not found' }, 404);

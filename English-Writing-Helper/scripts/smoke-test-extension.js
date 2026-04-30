@@ -172,6 +172,11 @@ async function main() {
     }));
     assert(seenWhatsNew?.hasSeenWhatsNew === true, 'Whats new notice was not marked as seen after dismissing it.');
     assert(await optionsPage.locator('#uiLanguage').count() === 1, 'Options page is missing the interface language selector.');
+    assert(await optionsPage.locator('#usageMode').count() === 1, 'Options page is missing the usage mode selector.');
+    assert(await optionsPage.locator('#managedLicenseKey').count() === 1, 'Options page is missing the Managed Credits license input.');
+    assert(await optionsPage.locator('#refreshManagedBalance').count() === 1, 'Options page is missing the Managed Credits balance refresh button.');
+    assert(await optionsPage.locator('.managed-buy').count() === 3, 'Options page is missing the Managed Credits purchase buttons.');
+    assert(await optionsPage.locator('#usageConsentNotice').count() === 1, 'Options page is missing the first-run anonymous usage consent notice container.');
     assert(await optionsPage.locator('#anonymousUsageEnabled').count() === 1, 'Options page is missing the anonymous usage reporting toggle.');
     const geminiModels = await optionsPage.$$eval('#geminiModelSelect option', options => options.map(option => option.value));
     const openaiModels = await optionsPage.$$eval('#openaiModelSelect option', options => options.map(option => option.value));
@@ -183,6 +188,26 @@ async function main() {
     assert(await optionsPage.locator('#geminiApiKeyGuide').count() === 1, 'Options page is missing the Gemini API key guide link.');
     assert(await optionsPage.locator('#openaiApiKeyGuide').count() === 1, 'Options page is missing the OpenAI API key guide link.');
     assert(await optionsPage.locator('#openShortcutSettings').count() === 1, 'Options page is missing the shortcut settings button.');
+    const storedKeysBeforeModeSwitch = await worker.evaluate(() => new Promise(resolve => {
+      chrome.storage.sync.get(['geminiApiKey', 'openaiApiKey'], resolve);
+    }));
+    await optionsPage.selectOption('#usageMode', 'managed');
+    await optionsPage.fill('#managedLicenseKey', 'EWH-TEST-LICENSE');
+    await optionsPage.locator('#saveOptions').click();
+    await optionsPage.waitForTimeout(250);
+    const storedKeysAfterModeSwitch = await worker.evaluate(() => new Promise(resolve => {
+      chrome.storage.sync.get(['geminiApiKey', 'openaiApiKey', 'usageMode', 'managedLicenseKey'], resolve);
+    }));
+    assert(storedKeysAfterModeSwitch.usageMode === 'managed', 'Managed Credits usage mode was not saved.');
+    assert(storedKeysAfterModeSwitch.managedLicenseKey === 'EWH-TEST-LICENSE', 'Managed Credits license key was not saved.');
+    assert(storedKeysAfterModeSwitch.geminiApiKey === storedKeysBeforeModeSwitch.geminiApiKey, 'Gemini API key changed while switching usage mode.');
+    assert(storedKeysAfterModeSwitch.openaiApiKey === storedKeysBeforeModeSwitch.openaiApiKey, 'OpenAI API key changed while switching usage mode.');
+    await worker.evaluate(() => new Promise((resolve, reject) => {
+      chrome.storage.sync.set({ usageMode: 'byok' }, () => {
+        if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+        else resolve();
+      });
+    }));
     await optionsPage.selectOption('#uiLanguage', 'en');
     await optionsPage.waitForFunction(() => document.documentElement.lang === 'en');
     await optionsPage.selectOption('#uiLanguage', 'zh_TW');

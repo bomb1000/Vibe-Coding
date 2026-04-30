@@ -60,6 +60,16 @@ function updateExistingUiText() {
   if (whatsNewBody) whatsNewBody.textContent = ewT('whatsNewBody');
   const whatsNewButton = document.getElementById('ew-whats-new-dismiss');
   if (whatsNewButton) whatsNewButton.textContent = ewT('whatsNewDismiss');
+  const usageConsentTitle = document.getElementById('ew-usage-consent-title');
+  if (usageConsentTitle) usageConsentTitle.textContent = ewT('usageConsentTitle');
+  const usageConsentBody = document.getElementById('ew-usage-consent-body');
+  if (usageConsentBody) usageConsentBody.textContent = ewT('usageConsentBody');
+  const usageConsentBonus = document.getElementById('ew-usage-consent-bonus');
+  if (usageConsentBonus) usageConsentBonus.textContent = ewT('usageConsentBonus');
+  const usageConsentAccept = document.getElementById('ew-usage-consent-accept');
+  if (usageConsentAccept) usageConsentAccept.textContent = ewT('usageConsentAccept');
+  const usageConsentDecline = document.getElementById('ew-usage-consent-decline');
+  if (usageConsentDecline) usageConsentDecline.textContent = ewT('usageConsentDecline');
 }
 
 EWI18n.getStoredLanguage().then(language => {
@@ -773,6 +783,73 @@ function maybeShowWhatsNewNotice() {
   });
 }
 
+function maybeShowUsageConsentNotice() {
+  if (!chrome.runtime?.id || window.self !== window.top) return;
+  chrome.runtime.sendMessage({ type: 'GET_USAGE_CONSENT_STATE' }, (response) => {
+    if (chrome.runtime.lastError || !response?.shouldShow || !sidebar) return;
+    if (document.getElementById('ew-usage-consent-notice')) return;
+
+    const notice = document.createElement('div');
+    notice.id = 'ew-usage-consent-notice';
+    notice.className = 'ew-usage-consent-notice';
+
+    const title = document.createElement('strong');
+    title.id = 'ew-usage-consent-title';
+    title.textContent = ewT('usageConsentTitle');
+
+    const body = document.createElement('p');
+    body.id = 'ew-usage-consent-body';
+    body.textContent = ewT('usageConsentBody');
+
+    const bonus = document.createElement('p');
+    bonus.id = 'ew-usage-consent-bonus';
+    bonus.textContent = ewT('usageConsentBonus');
+
+    const actions = document.createElement('div');
+    actions.className = 'ew-usage-consent-actions';
+
+    const acceptButton = document.createElement('button');
+    acceptButton.id = 'ew-usage-consent-accept';
+    acceptButton.type = 'button';
+    acceptButton.textContent = ewT('usageConsentAccept');
+
+    const declineButton = document.createElement('button');
+    declineButton.id = 'ew-usage-consent-decline';
+    declineButton.type = 'button';
+    declineButton.textContent = ewT('usageConsentDecline');
+
+    function choose(enabled) {
+      chrome.runtime.sendMessage({ type: 'SET_USAGE_CONSENT', enabled }, () => {
+        notice.remove();
+      });
+    }
+
+    [acceptButton, declineButton].forEach(button => {
+      button.addEventListener('mousedown', event => event.stopPropagation());
+    });
+    acceptButton.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      choose(true);
+    });
+    declineButton.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      choose(false);
+    });
+
+    actions.appendChild(acceptButton);
+    actions.appendChild(declineButton);
+    notice.appendChild(title);
+    notice.appendChild(body);
+    notice.appendChild(bonus);
+    notice.appendChild(actions);
+
+    const fixedControls = document.getElementById('ew-sidebar-fixed-controls');
+    if (fixedControls) fixedControls.appendChild(notice);
+  });
+}
+
 function createSidebar() {
     // console.log("EW_CONTENT_DEBUG: createSidebar called.");
     if (window.self !== window.top) {
@@ -934,6 +1011,7 @@ function createSidebar() {
   }
   document.body.appendChild(sidebar);
   maybeShowWhatsNewNotice();
+  maybeShowUsageConsentNotice();
   // console.log("EW_CONTENT_DEBUG: createSidebar: Main sidebar element appended to document.body.");
   // console.log("EW_CONTENT_DEBUG: createSidebar completed.");
 }

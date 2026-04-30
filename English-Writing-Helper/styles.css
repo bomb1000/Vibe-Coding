@@ -309,6 +309,53 @@
   border-color: var(--ew-themed-button-hover-border);
 }
 
+#ew-usage-consent-notice {
+  border: 1px solid #7cbf89;
+  border-radius: 6px;
+  background: #f2fff5;
+  color: #183b22;
+  padding: 8px;
+  margin: 2px 0 6px;
+  line-height: 1.35;
+  cursor: default;
+}
+
+#ew-usage-consent-notice strong {
+  display: block;
+  font-size: 0.86em;
+}
+
+#ew-usage-consent-notice p {
+  margin: 4px 0;
+  font-size: 0.78em;
+}
+
+.ew-usage-consent-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+#ew-usage-consent-accept,
+#ew-usage-consent-decline {
+  border: 1px solid var(--ew-themed-button-border);
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 4px 8px;
+  font-size: 0.78em;
+}
+
+#ew-usage-consent-accept {
+  background-color: var(--ew-themed-button-bg);
+  color: var(--ew-themed-button-text);
+}
+
+#ew-usage-consent-decline {
+  background: transparent;
+  color: #183b22;
+}
+
 /* Optional: Styles for a disabled state if you choose to use it
 #ew-copy-button:disabled {
   background-color: #cccccc;

@@ -26,6 +26,14 @@
     .whats-new-notice p { margin: 6px 0; }
     .whats-new-notice button { background: #8a6bbd; margin-top: 4px; }
     .whats-new-notice button:hover { background: #6c4f9d; }
+    .choice-row { display: grid; gap: 8px; }
+    .choice-row label { border: 1px solid #ddd; border-radius: 6px; padding: 10px; cursor: pointer; }
+    .choice-row input { margin-right: 6px; }
+    .managed-panel { border: 1px solid #cab9e8; border-radius: 6px; background: #f8f4ff; padding: 12px; }
+    .managed-packages { display: grid; gap: 8px; margin: 10px 0; }
+    .managed-package { display: flex; justify-content: space-between; gap: 10px; border-bottom: 1px solid #e4daf7; padding-bottom: 8px; }
+    .consent-notice { border: 1px solid #b8d8c0; border-radius: 6px; background: #f1fff4; color: #193b24; padding: 12px; margin: 0 0 16px; line-height: 1.45; }
+    .consent-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
   </style>
 </head>
 <body>
@@ -35,6 +43,15 @@
     <p id="whatsNewVersionLine"></p>
     <p data-i18n="whatsNewBody">New in this version: multilingual interface, Feedback / Wishlist, custom prompts with quick writing styles, and privacy-friendly anonymous usage statistics.</p>
     <button type="button" id="dismissWhatsNew" data-i18n="whatsNewDismiss">Got it</button>
+  </div>
+  <div id="usageConsentNotice" class="consent-notice" hidden>
+    <strong data-i18n="usageConsentTitle">Help improve English Writing Helper?</strong>
+    <p data-i18n="usageConsentBody">You can share anonymous usage counts to help improve quality and cost estimates. No source text, translation, API key, page URL, or browsing history is sent.</p>
+    <p class="hint" data-i18n="usageConsentBonus">If you later use Managed Credits, purchases receive 5% bonus credits while anonymous statistics are enabled.</p>
+    <div class="consent-actions">
+      <button type="button" id="acceptUsageConsent" data-i18n="usageConsentAccept">Share anonymous stats</button>
+      <button type="button" id="declineUsageConsent" class="secondary" data-i18n="usageConsentDecline">Not now</button>
+    </div>
   </div>
 
   <div class="section">
@@ -56,9 +73,19 @@
 
   <div class="section">
     <h2 data-i18n="aiServiceTitle">1. Choose AI service</h2>
-    <p class="hint" data-i18n="aiServiceHint">For first-time users, Gemini is usually easier to set up. You can also use OpenAI.</p>
+    <p class="hint" data-i18n="aiServiceHint">Use your own API key for free extension use, or choose Managed Credits when you do not want to set up an API key.</p>
   </div>
 
+  <div class="form-group">
+    <label for="usageMode" data-i18n="usageModeLabel">Usage mode:</label>
+    <select id="usageMode">
+      <option value="byok" data-i18n="usageModeByok">Use my own API key</option>
+      <option value="managed" data-i18n="usageModeManaged">Use managed credits</option>
+    </select>
+    <p class="hint" data-i18n="usageModeHint">Your saved API keys are preserved when switching modes or updating the extension.</p>
+  </div>
+
+  <div id="byokSettings">
   <div class="form-group">
     <label for="apiProvider" data-i18n="apiProviderLabel">API provider:</label>
     <select id="apiProvider">
@@ -94,6 +121,22 @@
       <label for="openaiModelSelect" data-i18n="selectOpenAIModel">Select OpenAI Model:</label>
       <select id="openaiModelSelect" name="openaiModelSelect"></select>
     </div>
+  </div>
+  </div>
+
+  <div id="managedSettings" class="form-group managed-panel" hidden>
+    <strong data-i18n="managedCreditsTitle">Managed Credits</strong>
+    <p class="hint" data-i18n="managedCreditsHint">Buy prepaid credits and translate without setting up your own API key. Text is sent to the English Writing Helper backend only to complete the translation and deduct credits.</p>
+    <label for="managedLicenseKey" data-i18n="managedLicenseLabel">License key:</label>
+    <input type="text" id="managedLicenseKey" placeholder="Paste your managed credits license key" data-i18n-placeholder="managedLicensePlaceholder">
+    <p class="hint"><span data-i18n="managedBalanceLabel">Credit balance:</span> <strong id="managedCreditBalance">--</strong></p>
+    <div class="managed-packages">
+      <div class="managed-package"><span>US$4.99</span><span data-i18n="managedPackageSmall">100,000 characters</span><button type="button" class="secondary managed-buy" data-package-id="starter" data-i18n="buyManagedCredits">Buy</button></div>
+      <div class="managed-package"><span>US$9.99</span><span data-i18n="managedPackageMedium">250,000 characters</span><button type="button" class="secondary managed-buy" data-package-id="plus" data-i18n="buyManagedCredits">Buy</button></div>
+      <div class="managed-package"><span>US$24.99</span><span data-i18n="managedPackageLarge">750,000 characters</span><button type="button" class="secondary managed-buy" data-package-id="pro" data-i18n="buyManagedCredits">Buy</button></div>
+    </div>
+    <p class="hint" data-i18n="managedBonusHint">When anonymous usage statistics are enabled, future Managed Credits purchases receive 5% bonus credits.</p>
+    <button type="button" id="refreshManagedBalance" class="secondary" data-i18n="refreshManagedBalance">Refresh balance</button>
   </div>
 
   <div class="section">
@@ -138,6 +181,7 @@
       <input type="checkbox" id="anonymousUsageEnabled"> <span data-i18n="anonymousUsageLabel">Help improve this product by sending anonymous usage statistics</span>
     </label>
     <p class="hint" data-i18n="anonymousUsageHint">Only counts such as translation attempts, character counts, writing style, provider, model, and extension version are sent. Source text, translated text, API keys, page URLs, and browsing history are never sent.</p>
+    <p class="hint" data-i18n="anonymousUsageBonusHint">Managed Credits users receive 5% bonus credits on future purchases while this is enabled.</p>
   </div>
 
   <div class="section">
