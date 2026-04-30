@@ -298,6 +298,10 @@ async function main() {
 
     await page.locator('#q-fab-button').click();
 
+    await page.fill('#writing', 'ㄅㄆㄇˇ');
+    await page.waitForTimeout(1200);
+    assert(await page.locator('#ew-sidebar.open').count() === 0, 'Pure Bopomofo input should not open the sidebar or trigger translation.');
+
     await page.fill('#writing', '明天早上十點我們會在會議室討論新的產品計畫。');
     await page.waitForSelector('#ew-sidebar.open', { timeout: 5000 });
     await page.waitForFunction(() => {

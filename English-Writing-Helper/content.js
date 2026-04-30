@@ -18,9 +18,11 @@ const EW_BASE_FONT_SIZE = 14;
 const EW_INPUT_DEBOUNCE_MS = 900;
 const EW_MIN_INPUT_LENGTH = 2;
 const EW_NON_ENGLISH_SIGNAL_RE = /[^\x00-\x7F]/;
+const EW_BOPOMOFO_ONLY_RE = /^[\u3100-\u312F\u31A0-\u31BF\s˙ˊˇˋ]+$/;
 let ewInputListenerAttached = false;
 let ewInputDebounceTimer = null;
 let ewLastSubmittedInputText = '';
+const ewComposingTargets = new WeakSet();
 
 let isEwDragging = false;
 let ewDragStartX = 0, ewDragStartY = 0;
@@ -643,6 +645,8 @@ function triggerTranslation(text) {
 function attachInputTranslationListeners() {
   if (ewInputListenerAttached) return;
   document.addEventListener('input', ewHandleEditableInput, true);
+  document.addEventListener('compositionstart', ewHandleCompositionStart, true);
+  document.addEventListener('compositionend', ewHandleCompositionEnd, true);
   ewInputListenerAttached = true;
 }
 
@@ -650,7 +654,32 @@ function ewHandleEditableInput(event) {
   if (!isExtensionEnabled) return;
   const target = event.target;
   if (!isTranslatableEditable(target)) return;
+  if (event.isComposing || event.inputType === 'insertCompositionText' || ewComposingTargets.has(target)) {
+    window.clearTimeout(ewInputDebounceTimer);
+    return;
+  }
 
+  scheduleInputTranslation(target);
+}
+
+function ewHandleCompositionStart(event) {
+  if (isTranslatableEditable(event.target)) {
+    ewComposingTargets.add(event.target);
+    window.clearTimeout(ewInputDebounceTimer);
+  }
+}
+
+function ewHandleCompositionEnd(event) {
+  const target = event.target;
+  if (!isTranslatableEditable(target)) return;
+  ewComposingTargets.delete(target);
+  window.clearTimeout(ewInputDebounceTimer);
+  window.setTimeout(() => {
+    if (!ewComposingTargets.has(target)) scheduleInputTranslation(target);
+  }, 0);
+}
+
+function scheduleInputTranslation(target) {
   const text = getEditableText(target).trim();
   if (!shouldTranslateInputText(text)) return;
 
@@ -680,7 +709,9 @@ function getEditableText(element) {
 }
 
 function shouldTranslateInputText(text) {
-  return text.length >= EW_MIN_INPUT_LENGTH && EW_NON_ENGLISH_SIGNAL_RE.test(text);
+  return text.length >= EW_MIN_INPUT_LENGTH &&
+    EW_NON_ENGLISH_SIGNAL_RE.test(text) &&
+    !EW_BOPOMOFO_ONLY_RE.test(text);
 }
 
 function ensureSidebarReadyForTranslation() {
